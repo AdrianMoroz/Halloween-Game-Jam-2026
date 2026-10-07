@@ -52,6 +52,7 @@ function app(initialSave = null) {
   class FakeView {
     setGame(game, demo) { this.game = game; this.demo = demo; }
     resize() {} flash() {} render() {}
+    toggleCamera() { this.overview = !this.overview; return this.overview; }
   }
   class FakeAudio {
     constructor(options) {
@@ -106,6 +107,17 @@ test('loadout launch is disabled until exactly four skills are selected', () => 
   assert.equal(ui.get('launch').disabled, true); assert.equal(ui.get('selection-count').textContent, '3 / 4 equipped');
   ui.document.querySelector('[data-skill="miasma"]').onclick();
   assert.equal(ui.get('launch').disabled, false);
+});
+
+test('camera button and C change the view without spending casts or moving the player', () => {
+  const ui = app(); launch(ui);
+  ui.click('camera-button');
+  assert.equal(ui.evaluate('view.overview'), true);
+  assert.equal(ui.get('camera-button').getAttribute('aria-label'), 'Switch to close camera');
+  ui.events.keydown({ code: 'KeyC', repeat: false, preventDefault() {} });
+  assert.equal(ui.evaluate('view.overview'), false);
+  assert.equal(ui.evaluate('game.castsLeft'), 8);
+  assert.equal(ui.evaluate('game.player.motion'), null);
 });
 
 test('pause, resume, keyboard casting, and restart keep application state consistent', () => {

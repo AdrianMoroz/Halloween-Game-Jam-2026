@@ -224,7 +224,7 @@ function resume() { layout('game'); $('overlay').hidden = true; accumulator = 0;
 
 function help() {
   if (screen !== 'game') return;
-  panel('help', `<section class="panel help-panel"><span class="eyebrow">THE WAY THROUGH</span><h2>Darkness has rules.</h2><div class="help-grid"><p><strong>Move & face</strong>WASD or arrows move one tile at a time. Hold Shift with a direction to face without moving.</p><p><strong>Cast</strong>Keys 1–4 cast equipped skills. Hover a skill to preview its pattern. All skills share a limited reserve.</p><p><strong>Execute</strong>Move onto a disciple from outside their sight. Execution locks movement and spells for 2.5 seconds.</p><p><strong>Dispose</strong>Stand still on a corpse for 2 seconds to burn it. Corpses inside another guard’s vision raise an alert.</p><p><strong>Intercept</strong>An alerted guard runs to the nearest reachable boundary. Stop every fleeing witness before they escape.</p><p><strong>Survive</strong>An escaped witness summons the horde. Fog lifts, spells lock, and the glowing exit remains your goal.</p>${game.boss ? '<p><strong>At the summit</strong>Space strikes one tile ahead. Red tiles warn of the grandmaster’s next attack. Soul strikes use no spell casts.</p>' : ''}</div><button id="help-close" class="primary">Return to the courtyard</button></section>`);
+  panel('help', `<section class="panel help-panel"><span class="eyebrow">THE WAY THROUGH</span><h2>Darkness has rules.</h2><div class="help-grid"><p><strong>Move & face</strong>WASD or arrows move one tile at a time. Hold Shift with a direction to face without moving.</p><p><strong>Camera</strong>The close overhead camera follows you. Press C or the camera button for a wide planning view. Fog and guard visibility stay the same.</p><p><strong>Cast</strong>Keys 1–4 cast equipped skills. Hover a skill to preview its pattern. All skills share a limited reserve.</p><p><strong>Execute</strong>Move onto a disciple from outside their sight. Execution locks movement and spells for 2.5 seconds.</p><p><strong>Dispose</strong>Stand still on a corpse for 2 seconds to burn it. Corpses inside another guard’s vision raise an alert.</p><p><strong>Intercept</strong>An alerted guard runs to the nearest reachable boundary. Stop every fleeing witness before they escape.</p><p><strong>Survive</strong>An escaped witness summons the horde. Fog lifts, spells lock, and the glowing exit remains your goal.</p>${game.boss ? '<p><strong>At the summit</strong>Space strikes one tile ahead. Red tiles warn of the grandmaster’s next attack. Soul strikes use no spell casts.</p>' : ''}</div><button id="help-close" class="primary">Return to the courtyard</button></section>`);
   $('help-close').onclick = resume;
 }
 
@@ -252,6 +252,8 @@ function updateHUD() {
   $('hp').textContent = `${game.player.hp} / ${game.stats.maxHP}`;
   $('casts').textContent = `${game.castsLeft} / ${game.stats.maxSpellCasts}`;
   $('kills').textContent = String(run.killed + game.guards.filter(g => g.state === 'dead').length);
+  $('camera-button').setAttribute('aria-pressed', String(Boolean(view.overview)));
+  $('camera-button').setAttribute('aria-label', view.overview ? 'Switch to close camera' : 'Switch to wide camera');
   const mode = game.mode, fleeing = game.guards.filter(g => g.state === 'flee').length;
   $('mode').textContent = game.isHidden() && mode !== 'horde' ? 'HIDDEN' : ({ stealth: 'UNSEEN', chase: 'WITNESS FLEEING', horde: 'HORDE MODE', boss: 'THE SHATTERED SEAL' })[mode];
   $('mode').className = `mode mode-${mode}`;
@@ -312,6 +314,7 @@ document.addEventListener('keydown', event => {
   if (/^Digit[1-4]$/.test(code)) { event.preventDefault(); game.cast(Number(code.slice(-1)) - 1); }
   if (code === 'Space' && game.boss) { event.preventDefault(); game.strike(); }
   if (code === 'KeyR') { event.preventDefault(); startLevel(); }
+  if (code === 'KeyC') { event.preventDefault(); view.toggleCamera(); updateHUD(); }
   if (code === 'Slash' && event.shiftKey) { event.preventDefault(); help(); }
 });
 document.addEventListener('keyup', event => {
@@ -332,6 +335,7 @@ for (const button of document.querySelectorAll('[data-direction]')) {
   button.onpointerup = end; button.onpointercancel = end; button.onlostpointercapture = end;
 }
 $('pause-button').onclick = pause; $('help-button').onclick = help;
+$('camera-button').onclick = () => { if (screen === 'game' && !settingsOpen) { view.toggleCamera(); updateHUD(); } };
 $('touch-strike').onclick = () => game?.strike();
 $('sound-button').onclick = toggleSoundSettings;
 $('close-sound').onclick = () => closeSoundSettings(true);

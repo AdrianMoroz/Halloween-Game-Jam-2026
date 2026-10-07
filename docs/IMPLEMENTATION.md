@@ -78,6 +78,10 @@ Immortality prevents all player damage and preserves HP. The unique dialogue and
 
 ## Rendering and deployment
 
+The default view is a close perspective camera with a 40-degree vertical field of view looking down at the player from a stable overhead angle. It follows the interpolated position with a small facing-based look-ahead and exponential smoothing; it does not rotate when the player turns. C or the HUD camera button switches to a wide, map-fitting view. Portrait framing maintains a useful horizontal field. Both views use the same fog and simulation.
+
+`src/art.js` builds original masonry, paving, roof-tile, and fabric data textures without network or canvas dependencies. Map walls use instanced bodies, bevelled caps, footings, and trim. Characters have distinct outfits and articulated limbs. Static pieces are merged by material inside each moving segment; geometries and surface textures are shared by actors and retained across level changes, while per-actor color materials are released. Floor texture seams emphasize the actual movement grid. Contact discs anchor characters to the paving without a costly dynamic shadow pass.
+
 Three.js r180 is vendored with its original MIT license. Tiles and map walls use instancing. Basic geometry, materials and generated seal artwork avoid external graphics requests. Dynamic instance culling is disabled for visibility-changing map / overlay batches so stale bounds cannot hide new instances. Transient materials and instance buffers are released on level changes.
 
 ## Audio

@@ -31,6 +31,7 @@
   <section id="hud" class="hud" aria-label="Player status" hidden>
     <div class="location"><span id="level-number" class="eyebrow"></span><strong id="level-name"></strong></div>
     <div class="hud-stats"><div><span class="stat-label">VITALITY</span><strong id="hp"></strong></div><div><span class="stat-label">DARK RESERVE</span><strong id="casts"></strong></div><div><span class="stat-label">DISCIPLES SLAIN</span><strong id="kills"></strong></div></div>
+    <button id="camera-button" class="icon-button" aria-label="Switch to wide camera" aria-pressed="false" title="Camera · C">▣</button>
     <button id="pause-button" class="icon-button" aria-label="Pause game" title="Pause · Esc">Ⅱ</button>
   </section>
   <aside id="boss-hud" class="boss-hud" aria-label="Grandmaster status" hidden><div><span id="boss-name"></span><strong id="boss-health-text"></strong></div><div class="boss-track"><div id="boss-health"></div></div></aside>
@@ -41,7 +42,7 @@
     <div class="situation"><span id="mode" class="mode"></span><span id="objective"></span><button id="help-button" class="text-button">Controls <kbd>?</kbd></button></div>
     <div class="commitment" id="commitment" hidden><span id="commitment-label"></span><div><i id="commitment-fill"></i></div></div>
     <div id="skill-bar" class="skill-bar"></div>
-    <div class="keyboard-hint"><span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> / arrows · move</span><span><kbd>Shift</kbd> + direction · face</span><span><kbd>1</kbd>–<kbd>4</kbd> · cast</span><span id="strike-hint" hidden><kbd>Space</kbd> · soul strike</span><span><kbd>R</kbd> · restart</span></div>
+    <div class="keyboard-hint"><span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> / arrows · move</span><span><kbd>Shift</kbd> + direction · face</span><span><kbd>1</kbd>–<kbd>4</kbd> · cast</span><span id="strike-hint" hidden><kbd>Space</kbd> · soul strike</span><span><kbd>C</kbd> · camera</span><span><kbd>R</kbd> · restart</span></div>
   </section>
   <nav id="touch-controls" class="touch-controls" aria-label="Touch movement controls" hidden><button data-direction="north" aria-label="Move north">↑</button><button data-direction="west" aria-label="Move west">←</button><button data-direction="south" aria-label="Move south">↓</button><button data-direction="east" aria-label="Move east">→</button><button id="touch-strike" aria-label="Soul strike" hidden>⚔</button></nav>
   <div id="overlay" class="overlay" role="dialog" aria-modal="true" aria-label="Game menu"><section class="panel loading-panel"><span class="eyebrow">THE RADIANT YANG SECT</span><h1>The mountain<br>awaits.</h1><p>Preparing your ascent…</p><p id="boot-hint" class="subtle"></p></section></div>

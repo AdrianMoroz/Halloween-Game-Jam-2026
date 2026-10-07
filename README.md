@@ -10,6 +10,10 @@ There are three playable courtyards, followed by a summit encounter. Sneak past 
 
 This version adds three original music loops and browser-generated narration for story scenes and guard whispers. No narration recordings, API keys, or plugin connections are required.
 
+The presentation update adds a closer, player-following overhead perspective inspired by classic tactical stealth games. Characters have articulated limbs, layered outfits, armor, and swords; courtyard walls have textured masonry, moss, stone footings, and bevelled tile caps. Press **C** or the camera button beside Pause to switch between the close camera and a wide planning view.
+
+[Offline scene preview](docs/images/close-camera-offline.png): this illustrates the camera and model geometry using approximate software lighting. It is not a browser screenshot or a substitute for a WebGL playtest.
+
 ## Play locally on Windows
 
 1. Extract the entire ZIP into a folder.
@@ -72,6 +76,7 @@ Python is only a local development convenience. The deployed game is entirely st
 | Space, at the summit | Basic soul strike, one tile ahead |
 | Esc | Pause / resume |
 | Shift + / (`?`) | Open controls |
+| C / camera button | Toggle close follow camera / wide planning view |
 | R | Restart the current attempt |
 | Touch direction buttons | Move on devices with a coarse pointer |
 | Touch skill buttons | Cast |
@@ -104,6 +109,8 @@ The invincible branch stays unwinnable. Dying in it offers another attempt at th
 | `src/grid.js` | Grid rules, breadth-first pathfinding, visibility rays, pattern rotation |
 | `src/game.js` | Renderer-independent fixed-step gameplay simulation and campaign accounting |
 | `src/view.js` | Three.js scene, instanced map tiles, actors, fog visibility, target previews and effects |
+| `src/camera.js` | Close overhead tracking, smooth framing, responsive perspective, and wide planning view |
+| `src/art.js` | Original procedural surface textures and shared, articulated character models |
 | `src/main.js` | Menus, input, HUD, transitions, local campaign persistence, frame loop |
 | `src/audio.js` | Music crossfades, narration queues, voice selection, ducking and sound preferences |
 | `assets/music/` | Original bundled stealth, horde and boss music loops |
@@ -126,13 +133,13 @@ npm test
 npm run check
 ```
 
-At handoff: **67 tests pass**. They exercise real gameplay rules, campaign progression, menu/button flow in a DOM model, and real Three.js scene construction without a GPU. Audio tests cover user activation, track transitions, narration queues, interruption, replay, mute, preferences, and unavailable APIs using controlled audio/speech models. They also check that the bundled tracks exist.
+At handoff: **74 tests pass**. They exercise real gameplay rules, campaign progression, menu/button flow in a DOM model, and real Three.js scene construction without a GPU. Camera and asset checks cover smooth tracking, wide framing on landscape and portrait screens, shared horde geometry, articulated limbs, fog hiding, and resource cleanup. Audio tests cover user activation, track transitions, narration queues, interruption, replay, mute, preferences, and unavailable APIs using controlled audio/speech models. They also check that the bundled tracks exist.
 
 **A real-browser graphics or audio playtest was not available in the creation environment.** Automated tests do not validate shader compilation, CSS layout, frame rate, speaker output, voice quality, or gameplay feel. The MP3 files were checked for valid decoding, but not assessed by listening. Follow `docs/PLAYTEST.md` before treating this as a finished release.
 
 ## Prototype limitations
 
-- Procedural low-detail characters and architecture; no authored animations or production character assets yet.
+- Original procedural characters and architecture, with simple articulated walking poses; no imported character models or motion-captured animation.
 - Synthesized prototype music and browser narration; no recorded voice acting. Different devices may sound different.
 - Three small authored courtyards; no editor or procedural campaign generator.
 - Final-boss moves and balance are provisional. The supplied outline defines scaling and immortality but not a full boss combat loop.

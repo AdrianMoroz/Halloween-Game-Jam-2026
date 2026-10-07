@@ -1,6 +1,8 @@
 import * as THREE from '../vendor/three.module.js';
 import { actorPosition, key } from './grid.js';
 import { SKILL_BY_ID } from './content.js';
+import { TacticalCamera } from './camera.js';
+import { surfaceTexture, copingGeometry, characterModel, animateCharacter } from './art.js';
 
 const COLORS = { stone: 0x253f3c, wall: 0x46544e, gold: 0xcaaa70,
   yin: 0xae91e7, guard: 0xddc28b, alarm: 0xed7b65, frost: 0x83d4ee };
@@ -13,12 +15,14 @@ export class GameView {
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.setClearColor(0x080f12);
     this.scene = new THREE.Scene();
-    this.scene.add(new THREE.HemisphereLight(0xc7ddd1, 0x102023, 2.1));
-    const sun = new THREE.DirectionalLight(0xffdfb0, 2.6);
+    this.scene.add(new THREE.HemisphereLight(0xc7ddd1, 0x102023, 1.6));
+    const sun = new THREE.DirectionalLight(0xffdfb0, 2.3);
     sun.position.set(-8, 18, 7); this.scene.add(sun);
-    this.camera = new THREE.OrthographicCamera(-12, 12, 10, -10, 0.1, 100);
-    this.camera.position.set(0, 26, 21); this.camera.lookAt(0, 0, 0);
+    const rim = new THREE.DirectionalLight(0x8eadd0, 0.75);
+    rim.position.set(6, 12, -10); this.scene.add(rim);
+    this.cameraRig = new TacticalCamera(); this.camera = this.cameraRig.camera;
     this.materials = new Map(); this.geometries = new Map(); this.entities = new Map();
+    this.textures = new Map();
     this.dynamicMaterials = new Set(); this.flashes = []; this.previewSkill = null;
     this.world = null; this.game = null; this.revision = -1; this.shake = 0;
     this.dummy = new THREE.Object3D(); this.color = new THREE.Color();
@@ -32,6 +36,26 @@ export class GameView {
       color, emissive, emissiveIntensity: 0.35, roughness: 0.86, metalness: 0.05,
     }));
     return this.materials.get(id);
+  }
+  surfaceMaterial(kind, color = 0xffffff) {
+    const id = `surface-${kind}-${color}`;
+    if (!this.materials.has(id)) {
+      if (!this.textures.has(kind)) {
+        const texture = surfaceTexture(kind);
+        texture.anisotropy = Math.min(4, this.renderer.capabilities?.getMaxAnisotropy?.() || 1);
+        this.textures.set(kind, texture);
+      }
+      const texture = this.textures.get(kind);
+      this.materials.set(id, new THREE.MeshStandardMaterial({ color, map: texture,
+        bumpMap: kind === 'cloth' ? null : texture, bumpScale: kind === 'stone' ? 0.065 : 0.025,
+        roughness: kind === 'roof' ? 0.68 : 0.93, metalness: 0.02 }));
+    }
+    return this.materials.get(id);
+  }
+  contactShadowMaterial() {
+    if (!this.materials.has('contact-shadow')) this.materials.set('contact-shadow',
+      new THREE.MeshBasicMaterial({ color: 0x040807, transparent: true, opacity: 0.35, depthWrite: false }));
+    return this.materials.get('contact-shadow');
   }
   geometry(id, create) {
     if (!this.geometries.has(id)) this.geometries.set(id, create());
@@ -63,16 +87,20 @@ export class GameView {
     this.dynamicMaterials.clear(); this.entities.clear(); this.flashes = [];
     if (this.sealTexture) { this.sealTexture.dispose(); this.sealTexture = null; }
     this.game = game; this.demo = preview; this.revision = -1; this.previewSkill = null;
+    this.cameraRig.setGame(game, preview);
     this.world = new THREE.Group(); this.scene.add(this.world);
     const { width, height } = game.grid, count = width * height;
-    this.floors = new THREE.InstancedMesh(this.geometry('floor', () => new THREE.BoxGeometry(0.975, 0.12, 0.975)),
-      this.material(COLORS.stone), count);
-    this.walls = new THREE.InstancedMesh(this.geometry('wall', () => new THREE.BoxGeometry(0.96, 1.28, 0.96)),
-      this.material(COLORS.wall), count);
-    this.caps = new THREE.InstancedMesh(this.geometry('wallcap', () => new THREE.BoxGeometry(1, 0.08, 1)),
-      this.material(0x718276), count);
-    this.world.add(this.floors, this.walls, this.caps);
-    this.floors.frustumCulled = this.walls.frustumCulled = this.caps.frustumCulled = false;
+    this.floors = new THREE.InstancedMesh(this.geometry('floor', () => new THREE.BoxGeometry(0.985, 0.12, 0.985)),
+      this.surfaceMaterial('floor'), count);
+    this.walls = new THREE.InstancedMesh(this.geometry('wall', () => new THREE.BoxGeometry(0.96, 1.18, 0.96)),
+      this.surfaceMaterial('stone'), count);
+    this.caps = new THREE.InstancedMesh(this.geometry('wallcap', copingGeometry), this.surfaceMaterial('roof', 0xc9d5c9), count);
+    this.footings = new THREE.InstancedMesh(this.geometry('wall-footing', () => new THREE.BoxGeometry(1.025, 0.13, 1.025)),
+      this.material(0x535d51), count);
+    this.bands = new THREE.InstancedMesh(this.geometry('wall-band', () => new THREE.BoxGeometry(1.005, 0.065, 1.005)),
+      this.material(0x89947c), count);
+    this.world.add(this.floors, this.walls, this.caps, this.footings, this.bands);
+    for (const mesh of [this.floors, this.walls, this.caps, this.footings, this.bands]) mesh.frustumCulled = false;
     const base = this.box(width + 0.5, 0.5, height + 0.5, this.material(0x102326));
     base.position.y = -0.36; this.world.add(base);
     const frame = this.box(width + 0.7, 0.1, height + 0.7, this.material(0x33423b));
@@ -115,28 +143,40 @@ export class GameView {
       this.dummy.position.copy(this.position(x, y, -0.07)); this.dummy.updateMatrix();
       this.floors.setMatrixAt(index, this.dummy.matrix);
       const shade = 0.68 + ((x * 17 + y * 11) % 7) * 0.045;
-      this.color.set(visible ? (game.mode === 'horde' ? 0x3b3733 : 0x2c4b45) : 0x000000).multiplyScalar(shade);
+      this.color.set(visible ? (game.mode === 'horde' ? 0xaaa291 : 0xb1c1b3) : 0x000000).multiplyScalar(shade);
       this.floors.setColorAt(index, this.color);
       const drawWall = visible && game.grid.isWall(x, y);
       this.dummy.scale.setScalar(drawWall ? 1 : 0);
       this.dummy.position.copy(this.position(x, y, 0.59)); this.dummy.updateMatrix();
       this.walls.setMatrixAt(index, this.dummy.matrix);
-      this.dummy.position.y = 1.27; this.dummy.updateMatrix(); this.caps.setMatrixAt(index, this.dummy.matrix);
+      this.dummy.position.y = 1.235; this.dummy.updateMatrix(); this.caps.setMatrixAt(index, this.dummy.matrix);
+      this.dummy.position.y = 0.035; this.dummy.updateMatrix(); this.footings.setMatrixAt(index, this.dummy.matrix);
+      this.dummy.position.y = 1.115; this.dummy.updateMatrix(); this.bands.setMatrixAt(index, this.dummy.matrix);
     }
     this.floors.instanceMatrix.needsUpdate = true; this.floors.instanceColor.needsUpdate = true;
     this.walls.instanceMatrix.needsUpdate = true; this.caps.instanceMatrix.needsUpdate = true;
+    this.footings.instanceMatrix.needsUpdate = true; this.bands.instanceMatrix.needsUpdate = true;
     this.exitGate.visible = this.demo || game.visible.has(key(game.level.exit.x, game.level.exit.y));
     this.revision = game.visibilityRevision;
   }
 
   makeGate() {
-    const gate = new THREE.Group(), stone = this.material(0x667668), gold = this.material(COLORS.gold, 0x755629);
+    const gate = new THREE.Group(), stone = this.surfaceMaterial('stone'), wood = this.material(0x584737),
+      gold = this.material(COLORS.gold, 0x755629);
     for (const side of [-1, 1]) {
-      const post = this.box(0.14, 1.75, 0.14, stone); post.position.set(side * 0.42, 0.8, 0); gate.add(post);
+      const base = this.box(0.28, 0.22, 0.30, stone); base.position.set(side * 0.45, 0.10, 0); gate.add(base);
+      const post = this.box(0.16, 1.75, 0.16, wood); post.position.set(side * 0.45, 0.9, 0); gate.add(post);
+      for (const y of [0.28, 1.40]) {
+        const band = this.box(0.185, 0.075, 0.185, gold); band.position.set(side * 0.45, y, 0); gate.add(band);
+      }
       const lamp = this.sphere(0.09, gold); lamp.position.set(side * 0.42, 1.38, 0.12); gate.add(lamp);
     }
-    const lintel = this.box(1.2, 0.16, 0.32, gold); lintel.position.y = 1.72; gate.add(lintel);
-    const roof = this.cone(0.83, 0.33, this.material(0x203532), 4); roof.position.y = 1.94; roof.rotation.y = Math.PI / 4; roof.scale.z = 0.6; gate.add(roof);
+    const lintel = this.box(1.2, 0.16, 0.32, wood); lintel.position.y = 1.72; gate.add(lintel);
+    const roof = this.cone(0.88, 0.33, this.surfaceMaterial('roof'), 4);
+    roof.position.y = 1.96; roof.rotation.y = Math.PI / 4; roof.scale.z = 0.6; gate.add(roof);
+    const eave = this.box(1.32, 0.07, 0.83, gold); eave.position.y = 1.80; gate.add(eave);
+    const plaque = this.box(0.34, 0.25, 0.055, gold); plaque.position.set(0, 1.62, 0.18); gate.add(plaque);
+    const inset = this.box(0.25, 0.17, 0.018, wood); inset.position.set(0, 1.62, 0.215); gate.add(inset);
     const ring = this.torus(0.37, 0.035, gold); ring.position.y = 0.04; gate.add(ring);
     return gate;
   }
@@ -167,32 +207,17 @@ export class GameView {
   }
 
   makeActor(kind) {
-    const root = new THREE.Group(), body = new THREE.Group(); root.add(body);
-    const isPlayer = kind === 'player', isBoss = kind === 'boss', isHorde = kind === 'horde';
-    const color = isPlayer ? COLORS.yin : isBoss ? 0xf2e7c3 : isHorde ? 0x9b6556 : COLORS.guard;
-    const robeMaterial = this.material(color, isPlayer ? 0x453566 : 0x000000).clone();
-    this.dynamicMaterials.add(robeMaterial);
-    const robe = this.cone(0.25, 0.63, robeMaterial); robe.rotation.z = Math.PI; robe.position.y = 0.49; body.add(robe);
-    const belt = this.box(0.32, 0.055, 0.28, this.material(isPlayer ? 0x4b3d67 : 0x645540)); belt.position.y = 0.46; body.add(belt);
-    const head = this.sphere(0.115, this.material(isPlayer ? 0xc6afda : 0xc9b29b)); head.position.y = 0.89; body.add(head);
-    if (!isPlayer) {
-      const hat = this.cone(0.2, 0.1, this.material(isBoss ? 0xf5dfb1 : 0x394640)); hat.position.y = 0.99; body.add(hat);
-    }
-    const weapon = this.box(0.035, 0.07, 0.42, this.material(isPlayer ? 0xe2cff5 : 0xdfd8bf));
-    weapon.position.set(0.23, 0.52, -0.26); body.add(weapon);
-    const pointer = this.cone(0.1, 0.24, this.material(color), 3);
-    pointer.rotation.x = -Math.PI / 2; pointer.position.set(0, 0.08, -0.4); root.add(pointer);
-    const ring = this.torus(isBoss ? 0.46 : 0.31, isPlayer ? 0.025 : 0.013, this.material(color, isPlayer ? 0x7552ac : 0x000000));
-    ring.position.y = 0.035; root.add(ring);
-    if (isBoss) root.scale.setScalar(1.3);
-    root.userData = { body, robeMaterial, ring, baseColor: color, kind };
+    const root = characterModel(this, kind);
     this.world.add(root); return root;
   }
 
   makeCorpse() {
-    const group = new THREE.Group();
-    const body = this.box(0.27, 0.12, 0.63, this.material(0x6b6856)); body.position.y = 0.085; group.add(body);
-    const head = this.sphere(0.105, this.material(0xbda58b)); head.position.set(0, 0.095, -0.38); group.add(head);
+    const group = characterModel(this, 'guard'), { body, ring, pointer, arms, legs } = group.userData;
+    group.remove(ring, pointer);
+    body.scale.setScalar(0.68); body.rotation.set(Math.PI / 2, 0, -0.25);
+    body.position.set(0, 0.16, -0.45);
+    arms[0].rotation.z = 0.40; arms[1].rotation.z = -0.65;
+    legs[0].rotation.z = 0.12; legs[1].rotation.z = -0.18;
     this.world.add(group); return group;
   }
 
@@ -201,7 +226,8 @@ export class GameView {
     for (const tile of effect.tiles) {
       const part = new THREE.Group(); part.position.copy(this.position(tile.x, tile.y));
       if (effect.kind === 'wall') {
-        const bone = this.box(0.84, 0.8, 0.84, this.material(0x9caa9a)); bone.position.y = 0.4; part.add(bone);
+        const bone = this.box(0.84, 0.8, 0.84, this.surfaceMaterial('stone', 0xc3c9ac)); bone.position.y = 0.4; part.add(bone);
+        const base = this.box(0.90, 0.11, 0.90, this.material(0x75836d)); base.position.y = 0.05; part.add(base);
         for (let i = 0; i < 3; i++) { const spike = this.cone(0.1, 0.37, this.material(0xe0d9c1)); spike.position.set((i - 1) * 0.23, 0.97, 0); part.add(spike); }
       } else if (effect.kind === 'trap') {
         const ring = this.torus(0.3, 0.026, this.material(0xbeb4a2)); ring.position.y = 0.06; part.add(ring);
@@ -230,13 +256,13 @@ export class GameView {
 
   resize() {
     const canvas = this.renderer.domElement, rect = canvas.parentElement.getBoundingClientRect();
-    const width = Math.max(1, rect.width), height = Math.max(1, rect.height), aspect = width / height;
+    const width = Math.max(1, rect.width), height = Math.max(1, rect.height);
     this.renderer.setSize(width, height, false);
-    const halfHeight = Math.max(8.3, 11 / aspect);
-    this.camera.left = -halfHeight * aspect; this.camera.right = halfHeight * aspect;
-    this.camera.top = halfHeight; this.camera.bottom = -halfHeight;
-    this.camera.updateProjectionMatrix();
+    this.cameraRig.resize(width, height);
   }
+
+  get overview() { return this.cameraRig.overview; }
+  toggleCamera() { return this.cameraRig.toggle(); }
 
   render(dt, elapsed) {
     const game = this.game;
@@ -252,14 +278,13 @@ export class GameView {
         actor.motion && game.visible.has(key(actor.motion.to.x, actor.motion.to.y)));
       mesh.visible = kind === 'player' || fogVisible;
       mesh.position.copy(this.position(position.x, position.y)); mesh.rotation.y = facingAngle(actor.facing);
-      const bob = actor.motion ? Math.sin(elapsed * 16) * 0.025 : Math.sin(elapsed * 2 + actor.x) * 0.012;
-      mesh.userData.body.position.y = bob;
+      animateCharacter(mesh, actor, elapsed, game.time);
       const color = actor.frozenUntil > game.time ? COLORS.frost : actor.state === 'flee' ? COLORS.alarm : actor.immune ? 0xf7ce86 : mesh.userData.baseColor;
       mesh.userData.robeMaterial.color.set(color);
       mesh.userData.ring.scale.setScalar(kind === 'player' ? 1 + Math.sin(elapsed * 3) * 0.055 : 1);
       if (kind === 'player') mesh.visible = actor.hp > 0 || Math.sin(elapsed * 12) > 0;
       if (kind === 'player' && actor.damageCooldown > 0) mesh.userData.robeMaterial.emissive.set(0xaa3333);
-      else mesh.userData.robeMaterial.emissive.set(kind === 'player' ? 0x453566 : actor.immune ? 0x8d6020 : 0x000000);
+      else mesh.userData.robeMaterial.emissive.set(kind === 'player' ? 0x161022 : actor.immune ? 0x8d6020 : 0x000000);
     };
     syncActor('player', game.player, 'player');
     for (const guard of game.guards) if (guard.state !== 'dead') syncActor(guard.id, guard, 'guard');
@@ -295,7 +320,7 @@ export class GameView {
     }
     this.flashes = this.flashes.filter(f => f.age < 0.5);
     this.shake = Math.max(0, this.shake - dt * 0.8);
-    this.camera.position.x = Math.sin(elapsed * 63) * this.shake;
+    this.cameraRig.update(dt, elapsed, this.shake);
     this.renderer.render(this.scene, this.camera);
   }
 }
