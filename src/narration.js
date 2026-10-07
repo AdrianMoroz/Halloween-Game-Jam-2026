@@ -4,4 +4,9 @@
 // See docs/AUDIO.md for every cue, its script, and recording instructions.
 // Example entry inside the object:
 // opening: new URL('../assets/narration/opening.mp3', import.meta.url).href,
-export const NARRATION_CLIPS = {};
+export const NARRATION_CLIPS = {
+  opening: new URL(
+    '../assets/narration/opening.wav',
+    import.meta.url
+  ).href,
+};
