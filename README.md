@@ -1,3 +1,12 @@
+# TEAM LEAD - Benas Denisovas
+
+
+# IDEA by Benas Denisovas https://github.com/AdrianMoroz/Halloween-Game-Jam-2026
+
+
+
+
+
 # The Last Disciple — first playable prototype
 
 A static Three.js browser game implementing the supplied Radiant Yang Sect / Yin Ghost General concept. **The Last Disciple is a working title.** This package is a starting implementation, with procedural 3D art and provisional balancing.
