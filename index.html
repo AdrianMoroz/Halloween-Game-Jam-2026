@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#080f12">
+  <meta name="description" content="Ascend the Radiant Yang mountain. A martial arts stealth game in your browser.">
+  <title>The Last Disciple</title>
+  <link rel="icon" href="./favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body data-screen="title">
+  <div class="ambient" aria-hidden="true"></div>
+  <main id="stage" aria-label="Game board"><canvas id="scene" tabindex="0" aria-label="Three-dimensional courtyard"></canvas></main>
+  <header class="brand"><span class="brand-mark" aria-hidden="true">☯</span><span>THE LAST DISCIPLE</span><span class="build-label">FIRST ASCENT · v0.1</span></header>
+  <section id="hud" class="hud" aria-label="Player status" hidden>
+    <div class="location"><span id="level-number" class="eyebrow"></span><strong id="level-name"></strong></div>
+    <div class="hud-stats"><div><span class="stat-label">VITALITY</span><strong id="hp"></strong></div><div><span class="stat-label">DARK RESERVE</span><strong id="casts"></strong></div><div><span class="stat-label">DISCIPLES SLAIN</span><strong id="kills"></strong></div></div>
+    <button id="pause-button" class="icon-button" aria-label="Pause game" title="Pause · Esc">Ⅱ</button>
+  </section>
+  <aside id="boss-hud" class="boss-hud" aria-label="Grandmaster status" hidden><div><span id="boss-name"></span><strong id="boss-health-text"></strong></div><div class="boss-track"><div id="boss-health"></div></div></aside>
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+  <div id="whisper" class="whisper" aria-live="polite" hidden></div>
+  <section id="play-footer" class="play-footer" aria-label="Skills and controls" hidden>
+    <div class="situation"><span id="mode" class="mode"></span><span id="objective"></span><button id="help-button" class="text-button">Controls <kbd>?</kbd></button></div>
+    <div class="commitment" id="commitment" hidden><span id="commitment-label"></span><div><i id="commitment-fill"></i></div></div>
+    <div id="skill-bar" class="skill-bar"></div>
+    <div class="keyboard-hint"><span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> / arrows · move</span><span><kbd>Shift</kbd> + direction · face</span><span><kbd>1</kbd>–<kbd>4</kbd> · cast</span><span id="strike-hint" hidden><kbd>Space</kbd> · soul strike</span><span><kbd>R</kbd> · restart</span></div>
+  </section>
+  <nav id="touch-controls" class="touch-controls" aria-label="Touch movement controls" hidden><button data-direction="north" aria-label="Move north">↑</button><button data-direction="west" aria-label="Move west">←</button><button data-direction="south" aria-label="Move south">↓</button><button data-direction="east" aria-label="Move east">→</button><button id="touch-strike" aria-label="Soul strike" hidden>⚔</button></nav>
+  <div id="overlay" class="overlay" role="dialog" aria-modal="true" aria-label="Game menu"><section class="panel loading-panel"><span class="eyebrow">THE RADIANT YANG SECT</span><h1>The mountain<br>awaits.</h1><p>Preparing your ascent…</p><p id="boot-hint" class="subtle"></p></section></div>
+  <noscript><div class="fatal">Enable JavaScript to play this game.</div></noscript>
+  <script>
+    if (location.protocol === 'file:') document.getElementById('boot-hint').textContent = 'Extract the project and run start.bat, then open http://localhost:8000. JavaScript modules require a web server.';
+  </script>
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>
