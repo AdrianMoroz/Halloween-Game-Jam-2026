@@ -50,6 +50,10 @@ The creation environment allowed simulation, application-flow, audio-controller 
 
 ## Presentation and performance
 
+- Confirm the close overhead camera follows interpolated movement without rotating when facing changes. Restart and change levels: the camera should begin at the new entry immediately.
+- Press C and use the HUD camera button. Confirm wide view fits the full board in landscape and portrait, while fog and visible guards stay unchanged. Switch back and confirm smooth tracking resumes.
+- Inspect character outfits, boots, armor, sword silhouettes, and walking limbs at the closer scale. Confirm frozen guards hold still, corpses lie on the paving, and different enemy types remain easy to identify.
+- Inspect masonry courses, moss, cap bevels, and stone footings. All wall details must disappear together outside vision; temporary walls should retain clear spell silhouettes.
 - Resize the window. Check that the board, HUD, loadout cards, and upgrade buttons remain usable.
 - Confirm scene visibility updates when fog changes and no tiles / cones unexpectedly disappear.
 - Try a horde lasting at least one minute on the intended hardware. Record frame rate and input feel.

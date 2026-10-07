@@ -103,14 +103,14 @@ body[data-screen="title"] .overlay { background: linear-gradient(90deg, #080f12f
 .help-grid p { font-size: 12px; color: var(--muted); }
 .help-grid strong { display: block; margin-bottom: 6px; color: var(--ink); font-size: 14px; }
 .hud { position: fixed; z-index: 2; top: 20px; left: 32px; right: 32px; display: flex; align-items: center; padding-bottom: 17px; border-bottom: 1px solid #35433d80; gap: 24px; }
-.location { margin-right: auto; }
+.location { margin-right: auto; min-width: 0; }
 .location .eyebrow { font-size: 8px; letter-spacing: .1em; }
-.location > strong { display: block; font: 23px Georgia, serif; margin-top: 3px; }
+.location > strong { display: block; font: 23px Georgia, serif; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .hud-stats { display: flex; gap: 28px; }
 .hud-stats > div { min-width: 78px; }
 .stat-label { display: block; font-size: 8px; letter-spacing: .1em; color: #7e958c; }
 .hud-stats strong { display: block; font-size: 17px; font-weight: 500; color: #d8deca; }
-.icon-button { color: var(--gold); background: #1b2928; border: 1px solid #3f5047; border-radius: 5px; width: 35px; height: 35px; font-size: 14px; }
+.icon-button { color: var(--gold); background: #1b2928; border: 1px solid #3f5047; border-radius: 5px; width: 35px; height: 35px; font-size: 14px; flex-shrink: 0; }
 .play-footer { position: fixed; z-index: 2; bottom: 15px; left: 50%; transform: translateX(-50%); width: min(760px, calc(100% - 50px)); }
 .situation { display: flex; align-items: center; justify-content: center; gap: 13px; margin-bottom: 11px; min-height: 29px; font-size: 10px; color: #a2b1a3; }
 .situation .text-button { font-size: 10px; margin-left: auto; white-space: nowrap; }
