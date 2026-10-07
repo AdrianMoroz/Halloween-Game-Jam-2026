@@ -10,6 +10,7 @@ const movementKeys = { KeyW: 'north', ArrowUp: 'north', KeyD: 'east', ArrowRight
 let run = freshRun(), game, view, screen = 'title', lastTime = performance.now(), accumulator = 0;
 let savedRun = null, held = new Map(), shiftHeld = false, toastUntil = 0, whisperUntil = 0, hudTime = 0;
 let settingsOpen = false, voiceSignature = '', currentVoiceCaption = null;
+let pendingDeath = null, windowFocused = true;
 const audio = new AudioManager({ onNarration: narrationCaption, onStatus: updateSoundControls });
 
 function narrationCaption(line) {
@@ -47,7 +48,7 @@ function updateSoundControls() {
 function closeSoundSettings(restoreFocus = false) {
   settingsOpen = false; $('sound-settings').hidden = true; $('sound-button').setAttribute('aria-expanded', 'false');
   held.clear(); shiftHeld = false; accumulator = 0;
-  if (restoreFocus) $(screen === 'game' ? 'scene' : 'sound-button').focus({ preventScroll: true });
+  if (restoreFocus) $(screen === 'game' ? 'scene' : screen === 'cutscene' ? 'skip-death-cutscene' : 'sound-button').focus({ preventScroll: true });
 }
 function toggleSoundSettings() {
   if (settingsOpen) { closeSoundSettings(true); return; }
@@ -69,11 +70,13 @@ function clearSave() { try { localStorage.removeItem(SAVE_KEY); } catch { /* Opt
 function layout(nextScreen) {
   const wasPaused = screen === 'pause' || screen === 'help';
   screen = nextScreen; document.body.dataset.screen = screen; held.clear(); shiftHeld = false;
+  $('death-cinematic').hidden = nextScreen !== 'cutscene';
+  if (nextScreen !== 'cutscene') pendingDeath = null;
   closeSoundSettings();
   if (nextScreen === 'pause' || nextScreen === 'help') audio.pause();
   else if (wasPaused && nextScreen === 'game') audio.resume();
   else { audio.stopNarration({ forget: true }); audio.resume(); }
-  const music = nextScreen === 'game' || nextScreen === 'pause' || nextScreen === 'help' ?
+  const music = nextScreen === 'game' || nextScreen === 'pause' || nextScreen === 'help' || nextScreen === 'cutscene' ?
     (game?.mode === 'horde' ? 'horde' : game?.boss ? 'boss' : 'stealth') :
     nextScreen === 'death' && game?.boss || nextScreen === 'story' && run.levelIndex >= LEVELS.length ? 'boss' : 'stealth';
   audio.setMusic(music); narrationCaption(currentVoiceCaption);
@@ -231,6 +234,21 @@ function help() {
   $('help-close').onclick = resume;
 }
 
+function beginDeathCutscene(nightmare) {
+  layout('cutscene'); pendingDeath = { nightmare };
+  $('overlay').hidden = true;
+  $('death-cinematic-title').textContent = nightmare ? 'AN ENDLESS NIGHTMARE' : 'THE ASCENT ENDS';
+  $('death-cinematic-title').style.opacity = '0'; $('death-fade').style.opacity = '0';
+  view.startDeathCutscene(Boolean(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches));
+  accumulator = 0; $('skip-death-cutscene').focus({ preventScroll: true });
+}
+
+function finishDeathCutscene() {
+  if (screen !== 'cutscene' || !pendingDeath) return;
+  const { nightmare } = pendingDeath;
+  view.finishDeathCutscene(); death(nightmare);
+}
+
 function death(nightmare) {
   panel('death', `<section class="panel compact-panel ${nightmare ? 'nightmare' : ''}"><span class="eyebrow">${nightmare ? 'AN ENDLESS NIGHTMARE' : 'THE ASCENT ENDS'}</span><h2>${nightmare ? 'His wrath<br>cannot die.' : 'Darkness<br>takes you.'}</h2><p>${nightmare ? 'You extinguished his lineage. He extinguished his mortality. The Yin Ghost General meets the same unkillable fury, again and again.' : 'Your body falls before the summit. The mountain keeps its secret a little longer.'}</p><div class="stack-actions"><button id="retry" class="primary">${nightmare ? 'Enter the nightmare again' : 'Restart this level'}</button><button id="death-menu" class="text-button">Return to title</button></div><span class="subtle">This attempt’s kills and points are reset.</span></section>`);
   $('retry').onclick = startLevel; $('death-menu').onclick = title;
@@ -294,7 +312,7 @@ function handleEvents() {
     }
     if (event.type === 'bossAttack') view.flash(event.tiles, 0xee745e);
     if (event.type === 'complete') { const result = commitLevel(run, game); if (result) { saveRun(); transition(result); } }
-    if (event.type === 'death') death(event.nightmare);
+    if (event.type === 'death') beginDeathCutscene(event.nightmare);
     if (event.type === 'victory') victory();
   }
 }
@@ -308,6 +326,10 @@ function input() {
 document.addEventListener('keydown', event => {
   const code = event.code;
   if (settingsOpen) { if (code === 'Escape') { event.preventDefault(); closeSoundSettings(true); } return; }
+  if (screen === 'cutscene') {
+    if (!event.repeat && (code === 'Space' || code === 'Escape')) { event.preventDefault(); finishDeathCutscene(); }
+    return;
+  }
   if (code === 'Space' && event.target?.tagName === 'BUTTON') return;
   if (movementKeys[code] && screen === 'game') { event.preventDefault(); if (!held.has(code)) held.set(code, movementKeys[code]); }
   if (code === 'ShiftLeft' || code === 'ShiftRight') shiftHeld = true;
@@ -324,8 +346,8 @@ document.addEventListener('keyup', event => {
   held.delete(event.code);
   if (event.code === 'ShiftLeft' || event.code === 'ShiftRight') shiftHeld = event.shiftKey;
 });
-window.addEventListener('blur', () => { held.clear(); if (screen === 'game') pause(); else audio.pause(); });
-window.addEventListener('focus', () => { if (!document.hidden && screen !== 'pause' && screen !== 'help') audio.resume(); });
+window.addEventListener('blur', () => { windowFocused = false; held.clear(); if (screen === 'game') pause(); else audio.pause(); });
+window.addEventListener('focus', () => { windowFocused = true; if (!document.hidden && screen !== 'pause' && screen !== 'help') audio.resume(); });
 window.addEventListener('pagehide', () => audio.pause());
 window.addEventListener('pageshow', () => { if (!document.hidden && screen !== 'pause' && screen !== 'help') audio.resume(); });
 document.addEventListener('visibilitychange', () => {
@@ -333,7 +355,10 @@ document.addEventListener('visibilitychange', () => {
   else if (screen !== 'pause' && screen !== 'help') audio.resume();
 });
 for (const button of document.querySelectorAll('[data-direction]')) {
-  button.onpointerdown = event => { event.preventDefault(); button.setPointerCapture(event.pointerId); held.set(`touch-${event.pointerId}`, button.dataset.direction); };
+  button.onpointerdown = event => {
+    if (screen !== 'game' || settingsOpen) return;
+    event.preventDefault(); button.setPointerCapture(event.pointerId); held.set(`touch-${event.pointerId}`, button.dataset.direction);
+  };
   const end = event => held.delete(`touch-${event.pointerId}`);
   button.onpointerup = end; button.onpointercancel = end; button.onlostpointercapture = end;
 }
@@ -350,6 +375,7 @@ $('mute-all').onclick = () => { audio.unlock(); audio.setMuted(!audio.settings.m
 $('test-voice').onclick = () => { audio.unlock(); audio.narrate('The mountain is quiet. Your ascent begins.', { key: 'voice-test' }); };
 $('replay-narration').onclick = () => { audio.unlock(); audio.replay(); };
 $('skip-narration').onclick = () => audio.stopNarration();
+$('skip-death-cutscene').onclick = finishDeathCutscene;
 updateSoundControls();
 
 function frame(now) {
@@ -361,7 +387,15 @@ function frame(now) {
     if (now > toastUntil) $('toast').hidden = true;
     if (now > whisperUntil) $('whisper').hidden = true;
   } else accumulator = 0;
-  view?.render(settingsOpen || screen === 'pause' || screen === 'help' ? 0 : dt, now / 1000); requestAnimationFrame(frame);
+  const frozen = settingsOpen || screen === 'pause' || screen === 'help' || screen === 'cutscene' && (document.hidden || !windowFocused);
+  view?.render(frozen ? 0 : dt, now / 1000);
+  if (screen === 'cutscene') {
+    const cinematic = view.deathCutscene;
+    $('death-fade').style.opacity = String(cinematic.frame.fade);
+    $('death-cinematic-title').style.opacity = String(cinematic.frame.title);
+    if (cinematic.finished && !frozen) finishDeathCutscene();
+  }
+  requestAnimationFrame(frame);
 }
 
 try {

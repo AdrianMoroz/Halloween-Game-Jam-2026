@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import * as engine from '../src/game.js';
 import * as content from '../src/content.js';
+import { DeathCutscene, DEATH_CUTSCENE_SECONDS } from '../src/cutscene.js';
 
 class Element {
   constructor(tag, attributes = {}) {
@@ -38,7 +39,7 @@ function matches(element, selector) {
   return attribute ? attribute[1] in element.attributes && (attribute[2] === undefined || element.attributes[attribute[1]] === attribute[2]) : false;
 }
 
-function app(initialSave = null) {
+function app(initialSave = null, { reducedMotion = false } = {}) {
   const base = parse(readFileSync(new URL('../index.html', import.meta.url), 'utf8'));
   const events = {}, storage = new Map();
   if (initialSave) storage.set('last-disciple-campaign-v1', JSON.stringify(initialSave));
@@ -50,8 +51,10 @@ function app(initialSave = null) {
     addEventListener: (name, callback) => { events[name] = callback; },
   };
   class FakeView {
-    setGame(game, demo) { this.game = game; this.demo = demo; }
-    resize() {} flash() {} render(dt) { this.lastRenderDelta = dt; }
+    setGame(game, demo) { this.game = game; this.demo = demo; this.deathCutscene = null; }
+    resize() {} flash() {} render(dt) { this.lastRenderDelta = dt; this.deathCutscene?.update(dt); }
+    startDeathCutscene(reducedMotion) { this.deathCutscene = new DeathCutscene(this.game, reducedMotion); }
+    finishDeathCutscene() { this.deathCutscene?.finish(); }
     toggleCamera() { this.overview = !this.overview; return this.overview; }
   }
   class FakeAudio {
@@ -76,7 +79,8 @@ function app(initialSave = null) {
     setMuted(value) { this.settings.muted = value; if (value) this.speaking = false; this.update(); }
   }
   const context = vm.createContext({ ...engine, ...content, GameView: FakeView, AudioManager: FakeAudio, document,
-    window: { addEventListener() {} }, performance: { now: () => 0 }, requestAnimationFrame() {},
+    window: { addEventListener: (name, callback) => { events[`window:${name}`] = callback; }, matchMedia: () => ({ matches: reducedMotion }) },
+    performance: { now: () => 0 }, requestAnimationFrame() {},
     localStorage: { getItem: key => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value), removeItem: key => storage.delete(key) }, console,
   });
   const source = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8').replace(/^import .*?;\s*$/gm, '');
@@ -162,6 +166,7 @@ test('a high-kill campaign reaches the immortal branch and retries the same nigh
   ui.click('revelation-next'); ui.click('launch');
   assert.equal(ui.evaluate('game.boss.immune'), true); assert.equal(ui.get('boss-hud').hidden, false);
   ui.evaluate("game.damagePlayer(999); handleEvents();");
+  assert.equal(ui.evaluate('screen'), 'cutscene'); ui.click('skip-death-cutscene');
   assert.equal(ui.evaluate('screen'), 'death'); assert.ok(ui.get('overlay').innerHTML.includes('AN ENDLESS NIGHTMARE'));
   ui.click('retry'); assert.equal(ui.evaluate('game.boss.immune'), true); assert.equal(ui.evaluate('run.total'), 18);
 });
@@ -232,4 +237,54 @@ test('different whispers and immortal story branches select separate recording c
   ui.evaluate('run.total = 18; run.killed = 17; revelation();');
   assert.equal(ui.evaluate('audio.lastCue.options.key'), 'revelation-immortal');
   ui.evaluate('death(true);'); assert.equal(ui.evaluate('audio.lastCue.options.key'), 'death-immortal');
+});
+
+test('fatal damage plays a cutscene before the retry menu and the existing recorded death cue', () => {
+  const ui = app(); launch(ui); ui.evaluate('game.triggerHorde(); game.damagePlayer(); handleEvents();');
+  assert.equal(ui.evaluate('screen'), 'cutscene'); assert.equal(ui.get('death-cinematic').hidden, false);
+  assert.equal(ui.get('overlay').hidden, true); assert.equal(ui.get('hud').hidden, true);
+  assert.equal(ui.get('touch-controls').hidden, true); assert.equal(ui.get('play-footer').hidden, true);
+  assert.equal(ui.evaluate('audio.music'), 'horde'); assert.equal(ui.evaluate('audio.lastCue'), null);
+  const stoppedTime = ui.evaluate('game.time');
+  ui.evaluate('for (let now = 100; now <= 4500; now += 100) frame(now);');
+  assert.equal(ui.evaluate('screen'), 'cutscene');
+  ui.evaluate('frame(4600); frame(4700);');
+  assert.equal(ui.evaluate('screen'), 'death'); assert.equal(ui.evaluate('game.time'), stoppedTime);
+  assert.equal(ui.get('death-cinematic').hidden, true); assert.equal(ui.evaluate('audio.lastCue.options.key'), 'death');
+  ui.click('retry'); assert.equal(ui.evaluate('screen'), 'game'); assert.equal(ui.evaluate('view.deathCutscene'), null);
+  assert.equal(ui.evaluate('game.player.hp'), 1);
+});
+
+test('the cutscene blocks game controls and can be skipped by keyboard or touch button', () => {
+  for (const skip of ['Space', 'Escape', 'button']) {
+    const ui = app(); launch(ui); ui.evaluate('game.damagePlayer(); handleEvents();');
+    const casts = ui.evaluate('game.castsLeft');
+    for (const code of ['KeyW', 'Digit1', 'KeyR', 'KeyC']) ui.events.keydown({ code, repeat: false, preventDefault() {} });
+    assert.equal(ui.evaluate('screen'), 'cutscene'); assert.equal(ui.evaluate('held.size'), 0);
+    assert.equal(ui.evaluate('game.castsLeft'), casts); assert.equal(ui.evaluate('view.overview'), undefined);
+    if (skip === 'button') ui.click('skip-death-cutscene');
+    else ui.events.keydown({ code: skip, repeat: false, preventDefault() {} });
+    assert.equal(ui.evaluate('screen'), 'death');
+    assert.equal(ui.evaluate('view.deathCutscene.elapsed'), DEATH_CUTSCENE_SECONDS);
+  }
+});
+
+test('sound settings, hidden tabs, and lost focus hold the cutscene until returning', () => {
+  const ui = app(); launch(ui); ui.evaluate('game.damagePlayer(); handleEvents(); frame(100);');
+  const elapsed = ui.evaluate('view.deathCutscene.elapsed');
+  ui.click('sound-button'); ui.evaluate('frame(200);');
+  assert.equal(ui.evaluate('view.deathCutscene.elapsed'), elapsed);
+  ui.events.keydown({ code: 'Escape', repeat: false, preventDefault() {} });
+  assert.equal(ui.evaluate('settingsOpen'), false); assert.equal(ui.evaluate('screen'), 'cutscene');
+  ui.document.hidden = true; ui.events.visibilitychange(); ui.evaluate('frame(300);');
+  assert.equal(ui.evaluate('view.deathCutscene.elapsed'), elapsed);
+  ui.document.hidden = false; ui.events.visibilitychange(); ui.events['window:blur'](); ui.evaluate('frame(400);');
+  assert.equal(ui.evaluate('view.deathCutscene.elapsed'), elapsed);
+  ui.events['window:focus'](); ui.evaluate('frame(500);');
+  assert.ok(ui.evaluate('view.deathCutscene.elapsed') > elapsed);
+});
+
+test('reduced-motion preference requests a steady cinematic camera', () => {
+  const ui = app(null, { reducedMotion: true }); launch(ui); ui.evaluate('game.damagePlayer(); handleEvents();');
+  assert.equal(ui.evaluate('view.deathCutscene.reducedMotion'), true);
 });

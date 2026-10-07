@@ -231,13 +231,17 @@ export class Game {
     this.refreshVision(); this.emit('horde');
   }
 
-  damagePlayer(amount = 1) {
+  damagePlayer(amount = 1, attacker = null) {
     if (this.state !== 'playing' || this.player.damageCooldown > 0) return false;
     this.player.hp = Math.max(0, this.player.hp - amount);
     this.player.damageCooldown = 0.7; this.player.disposal = null;
     this.emit('damage', { amount });
     if (this.player.hp <= 0) {
-      this.player.death = { startedAt: this.time }; this.state = 'dead';
+      this.player.death = { startedAt: this.time, position: actorPosition(this.player), facing: this.player.facing,
+        attacker: attacker ? { id: attacker === this.boss ? 'boss' : attacker.id,
+          kind: attacker === this.boss ? 'boss' : attacker.tag === 'HordeEnemy' ? 'horde' : 'guard',
+          position: actorPosition(attacker), facing: attacker.facing } : null };
+      this.state = 'dead';
       this.emit('death', { nightmare: Boolean(this.boss?.immune) });
     }
     return true;
@@ -283,7 +287,7 @@ export class Game {
       boss.warning.remaining -= dt;
       if (boss.warning.remaining <= 0) {
         boss.attackStartedAt = this.time;
-        if (boss.warning.tiles.some(tile => sameTile(tile, this.player))) this.damagePlayer(boss.damage);
+        if (boss.warning.tiles.some(tile => sameTile(tile, this.player))) this.damagePlayer(boss.damage, boss);
         this.emit('bossAttack', { tiles: boss.warning.tiles });
         boss.warning = null; boss.cooldown = boss.immune ? 0.65 : 1.1;
       }
@@ -385,7 +389,8 @@ export class Game {
         const crossing = enemy.motion && this.player.motion &&
           sameTile(enemy.motion.to, this.player.motion.from) && sameTile(enemy.motion.from, this.player.motion.to);
         this.advanceStep(enemy, dt);
-        if (sameTile(enemy, this.player) || crossing) this.damagePlayer();
+        if (sameTile(enemy, this.player) || crossing) this.damagePlayer(1, enemy);
+        if (this.state !== 'playing') break;
         if (!enemy.motion && !sameTile(enemy, this.player)) {
           const path = shortestPath(this.grid, enemy, this.player, (x, y) => this.spellBlocked(x, y));
           if (path?.length > 1) this.startStep(enemy, path[1], 1 / enemy.speed);
