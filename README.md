@@ -1,3 +1,7 @@
+# Team Lead - Benas Denisovas
+
+# Idea by Benis Denisovas https://github.com/BenasDe
+
 # The Last Disciple — playable prototype v0.2
 
 A static Three.js browser game implementing the supplied Radiant Yang Sect / Yin Ghost General concept. **The Last Disciple is a working title.** This package is a starting implementation, with procedural 3D art and provisional balancing.
