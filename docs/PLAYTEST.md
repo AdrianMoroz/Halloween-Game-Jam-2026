@@ -42,6 +42,10 @@ The creation environment allowed simulation, application-flow, audio-controller 
 - Confirm each cast spends one global reserve point, and exhausted casts cannot fire.
 - Let a witness reach an open boundary. Confirm full visibility, locked spell buttons, and reinforcements entering through boundaries.
 - Confirm damage and game over at zero HP, and that a surviving player can still reach the exit.
+- At zero HP, watch the full 4.6-second death cutscene before the retry menu. Confirm the real attacking reinforcement swings, the disciple recoils and collapses, and the camera moves closer with cinematic bars and a final fade.
+- Die while enemies cross your movement path and while several occupy the same tile. The victim and killer should be readable; gameplay, enemy positions, and partial rewards should remain stopped.
+- Skip once with Space, once with Escape, and once with the on-screen button. Confirm the retry menu appears immediately, narration begins once, and retry starts at the level entry with the selected stats and loadout.
+- Open Sound during the cutscene, switch tabs, and focus another application. The pose, camera, and fade should hold until returning. Escape should first close Sound; a subsequent Escape skips the cutscene.
 - Confirm any active spell walls or traps expire normally during the horde.
 
 ## Campaign and summit
@@ -50,7 +54,7 @@ The creation environment allowed simulation, application-flow, audio-controller 
 - Restart a failed attempt and confirm kills / points are not duplicated.
 - Refresh the page and use Continue: completed levels and purchased upgrades persist; the current attempt restarts at entry.
 - Finish an ordinary branch. Confirm Space attacks, spell damage, red attack warnings, and victory.
-- Inspect the sword swing on Space, the boss's warning wind-up and attack, and the final fall behind the victory or game-over screen. Terminal animation must not cause additional gameplay updates or damage.
+- Inspect the sword swing on Space, the boss's warning wind-up and attack, and the final fall behind the victory screen. Get killed by the grandmaster from one and three tiles away: the cutscene should frame both combatants, then open the normal or nightmare retry screen. Terminal animation must not cause additional gameplay updates or damage.
 - Finish a run with 17 or 18 of the 18 disciples killed. Confirm the unique dialogue, IMMORTAL status, unchanged boss HP under attacks, and the nightmare retry flow.
 
 ## Presentation and performance
@@ -59,6 +63,8 @@ The creation environment allowed simulation, application-flow, audio-controller 
 - Press C and use the HUD camera button. Confirm wide view fits the full board in landscape and portrait, while fog and visible guards stay unchanged. Switch back and confirm smooth tracking resumes.
 - Inspect character outfits, boots, armor, sword silhouettes, and walking limbs at the closer scale. Confirm frozen guards hold still, corpses lie on the paving, and different enemy types remain easy to identify.
 - Inspect masonry courses, moss, cap bevels, and stone footings. All wall details must disappear together outside vision; temporary walls should retain clear spell silhouettes.
+- Trigger death beside map corners, narrow passages, gates, and active spell walls. Confirm the camera keeps the victim visible, both outfits fit on portrait screens, fog remains intact, and the camera returns to normal after retry.
+- Enable the operating system's reduced-motion preference. Confirm death uses a steady camera without a dolly or orbit and remains skippable.
 - Resize the window. Check that the board, HUD, loadout cards, and upgrade buttons remain usable.
 - Confirm scene visibility updates when fog changes and no tiles / cones unexpectedly disappear.
 - Try a horde lasting at least one minute on the intended hardware. Record frame rate and input feel.

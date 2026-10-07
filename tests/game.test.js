@@ -205,6 +205,33 @@ test('player and horde enemy cannot swap tiles through each other unharmed', () 
   assert.equal(game.player.hp, 1);
 });
 
+test('a fatal crossing snapshots the killer and stops subsequent horde updates immediately', () => {
+  const game = new Game(level()); game.triggerHorde(); game.spawnClock = 100;
+  const killer = { id: 'killer', tag: 'HordeEnemy', x: 4, y: 6, facing: 'south', speed: 1, motion: null };
+  const later = { id: 'later', tag: 'HordeEnemy', x: 2, y: 5, facing: 'south', speed: 1, motion: null };
+  game.horde.push(killer, later);
+  game.startStep(killer, { x: 4, y: 7 }, 1); game.startStep(later, { x: 2, y: 6 }, 1);
+  game.move('north'); game.update(FIXED_STEP);
+  assert.equal(game.state, 'dead'); assert.equal(later.motion.elapsed, 0);
+  assert.equal(game.player.death.attacker.id, 'killer'); assert.equal(game.player.death.attacker.kind, 'horde');
+  assert.ok(game.player.death.position.y < 7 && game.player.death.position.y > 6);
+  const snapshot = JSON.stringify(game.player.death), stoppedTime = game.time;
+  killer.x = 1; killer.motion.elapsed = .9; game.update(1);
+  assert.equal(JSON.stringify(game.player.death), snapshot); assert.equal(game.time, stoppedTime);
+  assert.equal(game.drainEvents().filter(event => event.type === 'death').length, 1);
+});
+
+test('a lethal boss warning identifies the grandmaster for both mortal and nightmare cutscenes', () => {
+  for (const killed of [0, 18]) {
+    const game = new Game(BOSS_LEVEL, DEFAULT_STATS, DEFAULT_LOADOUT, { killed, total: 18 });
+    game.player.x = 9; game.player.y = 8; game.boss.cooldown = 0;
+    advance(game, 1);
+    assert.equal(game.state, 'dead'); assert.equal(game.player.death.attacker.id, 'boss');
+    assert.equal(game.player.death.attacker.kind, 'boss');
+    assert.equal(game.drainEvents().find(event => event.type === 'death').nightmare, killed === 18);
+  }
+});
+
 test('the exit completes a courtyard in both stealth and horde modes', () => {
   for (const horde of [false, true]) {
     const game = new Game(level([], { start: { x: 4, y: 1 } }));

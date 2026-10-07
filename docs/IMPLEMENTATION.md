@@ -84,6 +84,16 @@ The default view is a close perspective camera with a 40-degree vertical field o
 
 Three.js r180 is vendored with its original MIT license. Tiles and map walls use instancing. Basic geometry, materials and generated seal artwork avoid external graphics requests. Dynamic instance culling is disabled for visibility-changing map / overlay batches so stale bounds cannot hide new instances. Transient materials and instance buffers are released on level changes.
 
+### Death cutscene
+
+Fatal damage records the player's interpolated position and an immutable attacker snapshot. Horde contact identifies the enemy that caused the hit, including opposing movement crossings; a lethal hit stops subsequent horde updates in that tick. A boss hit identifies the grandmaster in both mortal and immortal branches. The game remains dead throughout the cinematic, so damage, AI, movement, rewards, and spell timers do not advance.
+
+`src/cutscene.js` supplies a 4.6-second render clock. The attacker follows through, the player recoils and drops to a knee, the body collapses by 2.55 seconds, and the frame fades to black during the last 0.75 seconds. Contact enemies separate visually into available paving to prevent overlapping silhouettes; their simulation positions remain unchanged. Other actors hold their poses and gameplay overlays disappear.
+
+The cinematic camera dollies from the current perspective into a close side angle, then drifts slightly toward the body. It fits both characters' bounds within the viewport and letterbox, checks candidate angles against visible map walls, active spell walls, and the gate's posts, lintel, plaque, and roof, and raises the camera where necessary. It retains fog and wall geometry. Reduced-motion preferences cut immediately to a steady shot. Resizing preserves the cinematic; a retry or new scene clears it.
+
+Space, Escape, or the focused touch-accessible Skip cutscene button settles the final pose and opens the existing retry screen. Sound settings, document visibility, and window focus gate the render clock. The original `death` / `death-immortal` narration cues begin at the retry screen, so existing WAV or MP3 mappings remain valid. No additional media files or animation libraries are required.
+
 ## Audio
 
 The v0.2 audio layer preserves the gameplay rules. `AudioManager` lazily creates and resumes an AudioContext from a user interaction, fetches the bundled MP3s using relative URLs, caches decoded buffers, and crossfades looping sources over 1.2 seconds. Narration ducks the music to 24% of its selected volume.

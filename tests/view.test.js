@@ -7,6 +7,7 @@ import { Game } from '../src/game.js';
 import { LEVELS, DEFAULT_STATS, DEFAULT_LOADOUT } from '../src/content.js';
 import { TacticalCamera } from '../src/camera.js';
 import { EXECUTION_SECONDS, DISPATCH_SECONDS } from '../src/game.js';
+import { DEATH_CUTSCENE_SECONDS } from '../src/cutscene.js';
 
 function sceneView(game) {
   const view = Object.create(GameView.prototype);
@@ -188,4 +189,40 @@ test('boss combat has sword swings and a terminal collapse while gameplay remain
   assert.equal(boss.userData.body.rotation.x, pausedAngle);
   view.render(.5, 20.5); assert.equal(boss.userData.body.rotation.x, -Math.PI / 2);
   assert.equal(game.state, 'won'); assert.equal(game.time, stoppedTime); assert.equal(boss.userData.ring.visible, false);
+});
+
+test('the death cutscene pairs the real killer with a slow collapse while freezing gameplay and other actors', () => {
+  const game = new Game(LEVELS[0]), view = sceneView(game); game.triggerHorde();
+  const killer = { id: 'killer', tag: 'HordeEnemy', x: game.player.x, y: game.player.y, facing: 'south', motion: null };
+  game.horde.push(killer); game.startStep(game.guards[0], { x: 6, y: 5 }, 1);
+  view.render(0, 1); const geometryCount = view.geometries.size;
+  game.damagePlayer(1, killer); view.startDeathCutscene(); const snapshot = JSON.stringify(game);
+  view.render(.4, 1.4);
+  const player = view.entities.get('player'), attacker = view.entities.get('killer'), guard = view.entities.get(game.guards[0].id);
+  assert.equal(attacker.userData.trail.visible, true); assert.ok(player.userData.body.rotation.x > 0);
+  assert.ok(player.position.distanceTo(attacker.position) > .9);
+  const backgroundPose = [...guard.userData.body.position.toArray(), ...guard.userData.body.rotation.toArray()];
+  view.render(.8, 2.2); assert.ok(player.userData.body.position.y < -.2);
+  const angle = player.userData.body.rotation.x, camera = view.camera.matrixWorld.clone();
+  view.render(0, 100); assert.equal(player.userData.body.rotation.x, angle);
+  assert.deepEqual(view.camera.matrixWorld.elements, camera.elements);
+  assert.deepEqual([...guard.userData.body.position.toArray(), ...guard.userData.body.rotation.toArray()], backgroundPose);
+  view.render(3.4, 103.4);
+  assert.equal(view.deathCutscene.finished, true); assert.equal(view.deathCutscene.elapsed, DEATH_CUTSCENE_SECONDS);
+  assert.equal(player.userData.body.rotation.x, -Math.PI / 2); assert.equal(attacker.userData.trail.visible, false);
+  assert.equal(player.userData.body.scale.x, 1);
+  assert.equal(view.cones.count, 0); assert.equal(view.targets.count, 0); assert.equal(view.danger.count, 0);
+  assert.equal(JSON.stringify(game), snapshot); assert.equal(view.geometries.size, geometryCount);
+});
+
+test('skipping a death cutscene settles the pose and restarting clears its camera and resources', () => {
+  const game = new Game(LEVELS[0]), view = sceneView(game); game.damagePlayer();
+  view.startDeathCutscene(); view.finishDeathCutscene(); view.render(0, 0);
+  const player = view.entities.get('player'); assert.equal(player.userData.body.rotation.x, -Math.PI / 2);
+  assert.equal(view.deathCutscene.frame.fade, 1);
+  const material = player.userData.robeMaterial; let disposed = false;
+  material.addEventListener('dispose', () => { disposed = true; });
+  view.setGame(new Game(LEVELS[0])); view.render(0, 0);
+  assert.equal(disposed, true); assert.equal(view.deathCutscene, null); assert.equal(view.cameraRig.deathShot, null);
+  assert.equal(view.entities.get('player').userData.body.rotation.x, 0);
 });

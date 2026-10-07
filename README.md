@@ -14,9 +14,13 @@ The presentation update adds a closer, player-following overhead perspective ins
 
 Executions now show a paired grab, sword wind-up, dispatch, and victim collapse during the existing 2.5-second commitment. Spell victims fall or dissolve, corpse disposal kneels and burns with spectral flames, and the summit includes sword swings and terminal falls. These poses preserve the existing damage, kill, and disposal timing and respect pauses and fog.
 
+A fatal hit now plays a 4.6-second 3D cutscene before the retry menu: a close camera, the actual attacker's follow-through, a stagger and kneeling collapse, cinematic bars, and a fade to black. **Space, Esc, or Skip cutscene** goes straight to the retry screen. Gameplay stops on the fatal hit; sound settings, hidden tabs, and lost focus hold the cutscene. Reduced-motion preferences use a steady camera.
+
 [Offline scene preview](docs/images/close-camera-offline.png): this illustrates the camera and model geometry using approximate software lighting. It is not a browser screenshot or a substitute for a WebGL playtest.
 
 [Offline dispatch poses](docs/images/dispatch-offline.png) show the paired grab, wind-up, strike, collapse, and spectral disposal with the same lighting caveat.
+
+[Offline death-cutscene poses](docs/images/death-cutscene-offline.png) illustrate the camera transition, kneel, and collapse using the same software lighting. The cinematic UI must still be checked in a browser.
 
 ## Play locally on Windows
 
@@ -79,6 +83,7 @@ Python is only a local development convenience. The deployed game is entirely st
 | Hover a skill button | Preview target tiles |
 | Space, at the summit | Basic soul strike, one tile ahead |
 | Esc | Pause / resume |
+| Space / Esc / Skip cutscene, during death | Skip to the retry menu |
 | Shift + / (`?`) | Open controls |
 | C / camera button | Toggle close follow camera / wide planning view |
 | R | Restart the current attempt |
@@ -113,7 +118,8 @@ The invincible branch stays unwinnable. Dying in it offers another attempt at th
 | `src/grid.js` | Grid rules, breadth-first pathfinding, visibility rays, pattern rotation |
 | `src/game.js` | Renderer-independent fixed-step gameplay simulation and campaign accounting |
 | `src/view.js` | Three.js scene, instanced map tiles, actors, fog visibility, target previews and effects |
-| `src/camera.js` | Close overhead tracking, smooth framing, responsive perspective, and wide planning view |
+| `src/camera.js` | Close overhead tracking, wide planning view, and wall-aware cinematic framing |
+| `src/cutscene.js` | Cosmetic death timeline, captured combatants, and contact-enemy spacing |
 | `src/art.js` | Procedural surfaces, shared character rigs, dispatch, sword, fall and disposal poses |
 | `src/main.js` | Menus, input, HUD, transitions, local campaign persistence, frame loop |
 | `src/audio.js` | Music crossfades, recorded/speech narration queues, ducking and sound preferences |

@@ -1,4 +1,5 @@
 import * as THREE from '../vendor/three.module.js';
+import { cinematicPhase } from './cutscene.js';
 import { DISPATCH_SECONDS, DISPOSAL_SECONDS } from './game.js';
 
 // Original, deterministic surface art. Data textures work offline and in the
@@ -191,7 +192,7 @@ export function characterModel(view, kind) {
   if (isBoss) root.scale.setScalar(1.12);
   const ownedMaterials = [cloth];
   let trail = null;
-  if (isPlayer || isBoss) {
+  if (isPlayer || isBoss || isHorde) {
     const material = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0,
       side: THREE.DoubleSide, depthWrite: false });
     ownedMaterials.push(material); view.dynamicMaterials.add(material);
@@ -260,11 +261,40 @@ export function animateCorpse(mesh, disposal, gameTime) {
   });
 }
 
-export function animateCharacter(mesh, actor, time, gameTime, { execution = null } = {}) {
+export function animateCharacter(mesh, actor, time, gameTime, { execution = null, deathScene = null, role = null } = {}) {
   const { body, legs, arms, trail, ring, pointer, kind } = mesh.userData;
   body.position.set(0, 0, 0); body.rotation.set(0, 0, 0); body.scale.setScalar(1);
   ring.visible = pointer.visible = true; if (trail) trail.visible = false;
   for (const limb of [...legs, ...arms]) limb.rotation.set(0, 0, 0);
+
+  if (deathScene && role === 'victim') {
+    const { recoil, kneel, fall } = deathScene, upright = 1 - phase(fall);
+    fallPose(mesh, fall);
+    // Keep the close-up victim at full size instead of the tile-sized corpse
+    // scale used for guard disposal; leave room for its head by the attacker.
+    body.scale.setScalar(1);
+    body.position.y += 0.035 * phase(fall); body.position.z += 0.22 * phase(fall);
+    body.position.y -= 0.27 * kneel * upright;
+    body.position.z += 0.14 * recoil * upright;
+    body.rotation.x += (0.18 * recoil - 0.35 * kneel) * upright;
+    arms[0].rotation.x += 0.45 * recoil * upright;
+    arms[1].rotation.x += 0.25 * recoil * upright;
+    legs[0].rotation.x = -0.85 * kneel * upright;
+    legs[1].rotation.x = -0.95 * kneel * upright;
+    return;
+  }
+  if (deathScene && role === 'attacker') {
+    const t = deathScene.time, lift = cinematicPhase(t, 0, 0.20),
+      strike = cinematicPhase(t, 0.20, 0.65), recover = cinematicPhase(t, 0.65, 1.6);
+    arms[0].rotation.set(-0.1, 0, 0.06);
+    arms[1].rotation.set(2.1 - strike * 2.65 + recover * 0.42,
+      -0.4 * lift + 0.4 * strike, -0.08);
+    body.rotation.y = -0.3 + 0.6 * strike - 0.3 * recover;
+    body.rotation.x = -0.1 * strike * (1 - recover);
+    swordTrail(mesh, (t - 0.18) / 0.55);
+    ring.visible = pointer.visible = false;
+    return;
+  }
 
   if (actor.death) {
     const progress = (gameTime - actor.death.startedAt) / DISPATCH_SECONDS;
