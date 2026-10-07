@@ -1,17 +1,10 @@
-# TEAM LEAD - Benas Denisovas
-
-
-# IDEA by Benas Denisovas https://github.com/AdrianMoroz/Halloween-Game-Jam-2026
-
-
-
-
-
-# The Last Disciple — first playable prototype
+# The Last Disciple — playable prototype v0.2
 
 A static Three.js browser game implementing the supplied Radiant Yang Sect / Yin Ghost General concept. **The Last Disciple is a working title.** This package is a starting implementation, with procedural 3D art and provisional balancing.
 
 There are three playable courtyards, followed by a summit encounter. Sneak past guards or execute them, intercept fleeing witnesses, and survive a horde if a witness escapes. Choose four skills before each level and upgrade HP, movement speed, vision, or casts between levels. Campaign stealth kills determine the grandmaster's strength and the ≥90% immortal branch.
+
+This version adds three original music loops and browser-generated narration for story scenes and guard whispers. No narration recordings, API keys, or plugin connections are required.
 
 ## Play locally on Windows
 
@@ -37,11 +30,21 @@ python3 serve.py --no-browser
 
 Open the printed URL, normally `http://localhost:8000/`. If that port is occupied, the launcher selects a free port up to 8010. You can choose another range with `--port 9000`.
 
-Node.js is **not required to play**. Three.js r180 is vendored inside `vendor/`; there are no CDN, font, texture, API, or runtime network dependencies after the static files load.
+Node.js is **not required to play**. Three.js r180 is vendored inside `vendor/`, and music is bundled in `assets/music/`. The game and music use no external APIs or CDNs. Narration uses the browser's speech engine; some available voices may rely on the browser provider's online service.
+
+## Music and narration
+
+Click **Begin your ascent** to start playback. Browser autoplay rules require this first interaction. Quiet music accompanies stealth, a faster track enters during Horde Mode, and a third track accompanies the summit. Music lowers while narration speaks.
+
+Open **♪ Sound** to adjust music and voice volumes, choose an available English voice, test it, turn narration off, or mute everything. The adjacent **↻** and **▸|** buttons replay or skip the current narration. Gameplay pauses while sound settings are open. Sound preferences persist separately from the campaign.
+
+Narration is a placeholder using browser voices, with different pacing and pitch for the narrator, disciples, and grandmaster. Voice quality and availability depend on the browser and operating system. Written story text remains available when narration is muted or unsupported. Leaving a scene stops its narration; pausing or switching tabs suspends sound, and resuming repeats only the interrupted short passage.
+
+See `docs/AUDIO.md` for the music source, audio implementation, and asset replacement notes.
 
 ## Publish on GitHub Pages
 
-1. Put the **contents** of this project folder in your repository's root. `index.html`, `styles.css`, `src/`, `vendor/`, and `.nojekyll` must sit at that root. Do not upload only the ZIP.
+1. Put the **contents** of this project folder in your repository's root. Include `index.html`, `styles.css`, `src/`, `assets/`, `vendor/`, and `.nojekyll`. Do not upload only the ZIP.
 2. Commit and push to the repository's publishing branch, commonly `main`.
 3. In the repository, open **Settings → Pages**.
 4. Under **Build and deployment**, select **Deploy from a branch**.
@@ -98,11 +101,15 @@ The invincible branch stays unwinnable. Dying in it offers another attempt at th
 | `src/game.js` | Renderer-independent fixed-step gameplay simulation and campaign accounting |
 | `src/view.js` | Three.js scene, instanced map tiles, actors, fog visibility, target previews and effects |
 | `src/main.js` | Menus, input, HUD, transitions, local campaign persistence, frame loop |
+| `src/audio.js` | Music crossfades, narration queues, voice selection, ducking and sound preferences |
+| `assets/music/` | Original bundled stealth, horde and boss music loops |
 | `styles.css` | Layout and interface |
-| `tests/` | Gameplay, application-flow and scene-graph tests |
+| `tests/` | Gameplay, application-flow, audio-controller and scene-graph tests |
 | `scripts/check.mjs` | Syntax, module paths, asset paths and UI binding checks |
+| `scripts/generate_music.py` | Optional reproducible music generator; requires NumPy and ffmpeg |
 | `serve.py`, `start.bat`, `start.sh` | Local launchers |
 | `docs/IMPLEMENTATION.md` | Provisional rules and technical notes |
+| `docs/AUDIO.md` | Audio behavior, asset provenance and editing notes |
 | `docs/PLAYTEST.md` | Manual browser playtest checklist |
 | `vendor/` | Three.js r180 and its MIT license |
 
@@ -115,16 +122,17 @@ npm test
 npm run check
 ```
 
-At handoff: **44 tests pass**. They exercise real gameplay rules, campaign progression, menu/button flow in a DOM model, and real Three.js scene construction without a GPU. They cover fog hiding, execution/disposal timers, spells, fleeing paths, horde contact and exits, kill accounting on retries, upgrades, both boss branches, and scene resource cleanup.
+At handoff: **67 tests pass**. They exercise real gameplay rules, campaign progression, menu/button flow in a DOM model, and real Three.js scene construction without a GPU. Audio tests cover user activation, track transitions, narration queues, interruption, replay, mute, preferences, and unavailable APIs using controlled audio/speech models. They also check that the bundled tracks exist.
 
-**A real-browser visual playtest was not available in the creation environment.** Automated tests do not validate shader compilation, CSS layout, frame rate, or gameplay feel on a real GPU. Follow `docs/PLAYTEST.md` before treating this as a finished release.
+**A real-browser graphics or audio playtest was not available in the creation environment.** Automated tests do not validate shader compilation, CSS layout, frame rate, speaker output, voice quality, or gameplay feel. The MP3 files were checked for valid decoding, but not assessed by listening. Follow `docs/PLAYTEST.md` before treating this as a finished release.
 
 ## Prototype limitations
 
-- Procedural low-detail characters and architecture; no authored animations, audio, or production assets yet.
+- Procedural low-detail characters and architecture; no authored animations or production character assets yet.
+- Synthesized prototype music and browser narration; no recorded voice acting. Different devices may sound different.
 - Three small authored courtyards; no editor or procedural campaign generator.
 - Final-boss moves and balance are provisional. The supplied outline defines scaling and immortality but not a full boss combat loop.
 - Save data stays in the current browser. Continuing restarts the current level from its entry, preserving completed levels and purchased upgrades.
-- No multiplayer, accounts, external services, or backend.
+- No multiplayer, accounts, or game backend.
 
 See `docs/IMPLEMENTATION.md` for the choices made where the supplied outline left details unspecified.
