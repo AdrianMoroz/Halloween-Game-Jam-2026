@@ -11,6 +11,7 @@ class Element {
     this.tag = tag; this.attributes = attributes; this.id = attributes.id;
     this.dataset = Object.fromEntries(Object.entries(attributes).filter(([name]) => name.startsWith('data-')).map(([name, value]) => [name.slice(5).replace(/-([a-z])/g, (_, ch) => ch.toUpperCase()), value]));
     this.hidden = 'hidden' in attributes; this.disabled = 'disabled' in attributes;
+    this.value = attributes.value ?? ''; this.checked = 'checked' in attributes;
     this.style = {}; this.children = []; this.textContent = ''; this._html = '';
     this.classList = { toggle() {} };
   }
@@ -52,7 +53,27 @@ function app(initialSave = null) {
     setGame(game, demo) { this.game = game; this.demo = demo; }
     resize() {} flash() {} render() {}
   }
-  const context = vm.createContext({ ...engine, ...content, GameView: FakeView, document,
+  class FakeAudio {
+    constructor(options) {
+      this.options = options; this.settings = { musicVolume: .48, narrationVolume: .9, narrationEnabled: true, muted: false, voiceURI: '' };
+      this.supportsNarration = true; this.lastCue = null; this.speaking = false; this.error = ''; this.paused = false;
+    }
+    englishVoices() { return []; }
+    update() { this.options.onStatus(this); }
+    unlock() { this.unlocked = true; }
+    setMusic(mode) { this.music = mode; }
+    narrate(lines, options) { this.lastCue = { lines, options }; this.speaking = true; this.update(); }
+    stopNarration({ forget = false } = {}) { this.speaking = false; if (forget) this.lastCue = null; this.options.onNarration(null); this.update(); }
+    replay() { this.speaking = true; this.update(); }
+    pause() { this.paused = true; }
+    resume() { this.paused = false; }
+    setMusicVolume(value) { this.settings.musicVolume = value; this.update(); }
+    setNarrationVolume(value) { this.settings.narrationVolume = value; this.update(); }
+    setNarrationEnabled(value) { this.settings.narrationEnabled = value; if (!value) this.speaking = false; this.update(); }
+    setVoice(value) { this.settings.voiceURI = value; this.update(); }
+    setMuted(value) { this.settings.muted = value; if (value) this.speaking = false; this.update(); }
+  }
+  const context = vm.createContext({ ...engine, ...content, GameView: FakeView, AudioManager: FakeAudio, document,
     window: { addEventListener() {} }, performance: { now: () => 0 }, requestAnimationFrame() {},
     localStorage: { getItem: key => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value), removeItem: key => storage.delete(key) }, console,
   });
@@ -140,4 +161,43 @@ test('a spared campaign can finish the mortal boss and clears its finished save'
   assert.equal(ui.evaluate('game.boss.immune'), false);
   ui.evaluate('game.damageBoss(1000); handleEvents();');
   assert.equal(ui.evaluate('screen'), 'ending'); assert.equal(ui.storage.has('last-disciple-campaign-v1'), false);
+});
+
+test('opening narration starts from user interaction and stops when the story is skipped', () => {
+  const ui = app(); ui.click('new-run');
+  assert.equal(ui.evaluate('audio.unlocked'), true); assert.equal(ui.evaluate('audio.lastCue.options.key'), 'opening');
+  assert.equal(ui.get('skip-narration').disabled, false);
+  ui.click('skip-narration'); assert.equal(ui.evaluate('audio.speaking'), false);
+  ui.click('replay-narration'); assert.equal(ui.evaluate('audio.speaking'), true);
+  ui.click('story-next'); assert.equal(ui.evaluate('audio.lastCue'), null);
+});
+
+test('sound settings stop simulation, retain independent volume values, and can mute everything', () => {
+  const ui = app(); launch(ui); ui.click('sound-button');
+  let focusReturns = 0; ui.get('scene').focus = () => focusReturns++;
+  assert.equal(ui.evaluate('settingsOpen'), true);
+  const before = ui.evaluate('game.time'); ui.evaluate('frame(120)'); assert.equal(ui.evaluate('game.time'), before);
+  ui.get('music-volume').value = '25'; ui.get('music-volume').oninput();
+  ui.get('narration-volume').value = '70'; ui.get('narration-volume').oninput();
+  assert.equal(ui.evaluate('audio.settings.musicVolume'), .25); assert.equal(ui.evaluate('audio.settings.narrationVolume'), .7);
+  ui.click('mute-all'); assert.equal(ui.evaluate('audio.settings.muted'), true);
+  ui.click('close-sound'); assert.equal(ui.evaluate('settingsOpen'), false);
+  assert.equal(focusReturns, 1);
+});
+
+test('horde and boss events select the matching music, while pause suspends audio', () => {
+  const ui = app(); launch(ui); assert.equal(ui.evaluate('audio.music'), 'stealth');
+  ui.evaluate('game.triggerHorde(); handleEvents();'); assert.equal(ui.evaluate('audio.music'), 'horde');
+  ui.click('pause-button'); assert.equal(ui.evaluate('audio.paused'), true);
+  ui.click('resume'); assert.equal(ui.evaluate('audio.paused'), false); assert.equal(ui.evaluate('audio.music'), 'horde');
+  ui.evaluate('run.levelIndex = 3; startLevel();'); assert.equal(ui.evaluate('audio.music'), 'boss');
+});
+
+test('disabling narration leaves the written prologue and gameplay available', () => {
+  const ui = app(); ui.click('sound-button');
+  ui.get('narration-enabled').checked = false; ui.get('narration-enabled').onchange();
+  assert.equal(ui.evaluate('audio.settings.narrationEnabled'), false);
+  ui.click('close-sound'); ui.click('new-run');
+  assert.ok(ui.get('overlay').innerHTML.includes(content.OPENING[0])); ui.click('story-next'); ui.click('launch');
+  assert.equal(ui.evaluate('screen'), 'game');
 });

@@ -12,7 +12,22 @@
 <body data-screen="title">
   <div class="ambient" aria-hidden="true"></div>
   <main id="stage" aria-label="Game board"><canvas id="scene" tabindex="0" aria-label="Three-dimensional courtyard"></canvas></main>
-  <header class="brand"><span class="brand-mark" aria-hidden="true">☯</span><span>THE LAST DISCIPLE</span><span class="build-label">FIRST ASCENT · v0.1</span></header>
+  <header class="brand"><span class="brand-mark" aria-hidden="true">☯</span><span>THE LAST DISCIPLE</span><span class="build-label">FIRST ASCENT · v0.2</span></header>
+  <nav id="sound-controls" class="sound-controls" aria-label="Sound controls">
+    <button id="sound-button" class="sound-button" aria-controls="sound-settings" aria-expanded="false">♪ Sound</button>
+    <button id="replay-narration" class="sound-icon" aria-label="Replay narration" title="Replay voice" disabled>↻</button>
+    <button id="skip-narration" class="sound-icon" aria-label="Skip current narration" title="Skip voice" disabled>▸|</button>
+  </nav>
+  <section id="sound-settings" class="sound-settings" role="dialog" aria-label="Sound settings" hidden>
+    <div class="sound-heading"><strong>Sound</strong><button id="close-sound" class="text-button" aria-label="Close sound settings">✕</button></div>
+    <label for="music-volume">Music <output id="music-volume-value">48%</output></label><input id="music-volume" type="range" min="0" max="100" value="48">
+    <label class="narration-toggle"><input id="narration-enabled" type="checkbox" checked> Narration</label>
+    <label for="narration-volume">Voice volume <output id="narration-volume-value">90%</output></label><input id="narration-volume" type="range" min="0" max="100" value="90">
+    <label for="voice-select">Narrator voice</label><select id="voice-select"><option value="">Automatic English voice</option></select>
+    <div class="sound-actions"><button id="test-voice" class="secondary">Test voice</button><button id="mute-all" class="secondary">Mute all</button></div>
+    <p id="audio-status" class="subtle">Narration uses your browser’s available voices. Story text remains on screen.</p>
+    <p class="sound-note">Gameplay pauses while these settings are open.</p>
+  </section>
   <section id="hud" class="hud" aria-label="Player status" hidden>
     <div class="location"><span id="level-number" class="eyebrow"></span><strong id="level-name"></strong></div>
     <div class="hud-stats"><div><span class="stat-label">VITALITY</span><strong id="hp"></strong></div><div><span class="stat-label">DARK RESERVE</span><strong id="casts"></strong></div><div><span class="stat-label">DISCIPLES SLAIN</span><strong id="kills"></strong></div></div>
@@ -21,6 +36,7 @@
   <aside id="boss-hud" class="boss-hud" aria-label="Grandmaster status" hidden><div><span id="boss-name"></span><strong id="boss-health-text"></strong></div><div class="boss-track"><div id="boss-health"></div></div></aside>
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
   <div id="whisper" class="whisper" aria-live="polite" hidden></div>
+  <aside id="voice-caption" class="voice-caption" aria-live="off" hidden><span id="voice-speaker"></span><p id="voice-text"></p></aside>
   <section id="play-footer" class="play-footer" aria-label="Skills and controls" hidden>
     <div class="situation"><span id="mode" class="mode"></span><span id="objective"></span><button id="help-button" class="text-button">Controls <kbd>?</kbd></button></div>
     <div class="commitment" id="commitment" hidden><span id="commitment-label"></span><div><i id="commitment-fill"></i></div></div>

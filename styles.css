@@ -17,7 +17,7 @@ canvas { display: block; width: 100%; height: 100%; outline: none; }
 kbd { display: inline-flex; justify-content: center; align-items: center; min-width: 20px; height: 21px; padding: 1px 5px; border: 1px solid #42524e; border-radius: 4px; background: #172426; font: 10px/1 system-ui, sans-serif; color: #b4c0b8; }
 .ambient { position: fixed; inset: 0; pointer-events: none; background: radial-gradient(ellipse at 50% 35%, #17272a88, transparent 70%); }
 #stage { position: fixed; top: 105px; bottom: 166px; left: 10px; right: 10px; }
-.brand { position: absolute; z-index: 4; top: 25px; left: 34px; right: 34px; display: flex; align-items: center; gap: 11px; color: #d6d9c7; font-size: 11px; letter-spacing: .15em; pointer-events: none; }
+.brand { position: absolute; z-index: 4; top: 25px; left: 34px; right: 250px; display: flex; align-items: center; gap: 11px; color: #d6d9c7; font-size: 11px; letter-spacing: .15em; pointer-events: none; }
 .brand-mark { font: 27px Georgia, serif; color: var(--gold); }
 .build-label { margin-left: auto; color: #718680; font-size: 10px; }
 body[data-screen="game"] .brand, body[data-screen="pause"] .brand, body[data-screen="help"] .brand, body[data-screen="death"] .brand, body[data-screen="ending"] .brand { display: none; }
@@ -141,6 +141,29 @@ body:has(.boss-hud:not([hidden])) .toast { top: 140px; }
 body:has(.boss-hud:not([hidden])) .whisper { top: 181px; }
 .touch-controls { display: none; }
 .fatal { position: fixed; z-index: 99; inset: 0; display: grid; place-items: center; background: var(--bg); }
+.sound-controls { position: fixed; z-index: 7; top: 22px; right: 30px; display: flex; gap: 6px; }
+.sound-button, .sound-icon { padding: 7px 11px; border: 1px solid #46574a; border-radius: 5px; color: #c8d0b6; background: #142421ed; font-size: 10px; }
+.sound-icon { min-width: 29px; padding: 6px 8px; font-size: 15px; line-height: 1; }
+.sound-settings { position: fixed; z-index: 8; right: 30px; top: 66px; width: 305px; padding: 20px; border: 1px solid #586348; border-radius: 9px; background: #132122fa; box-shadow: 0 12px 50px #000b; max-height: calc(100svh - 85px); overflow-y: auto; }
+.sound-heading { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.sound-heading > strong { font: 24px Georgia, serif; }
+.sound-settings > label { display: flex; justify-content: space-between; align-items: center; color: #c9d0be; font-size: 11px; margin: 14px 0 7px; }
+.sound-settings output { color: var(--gold); }
+.sound-settings input[type="range"] { width: 100%; accent-color: var(--gold); }
+.sound-settings .narration-toggle { justify-content: flex-start; gap: 8px; padding-top: 9px; border-top: 1px solid #354739; }
+.sound-settings input[type="checkbox"] { accent-color: var(--gold); }
+.sound-settings select { width: 100%; padding: 8px 6px; background: #0e191b; color: #c8d0bb; border: 1px solid #4b5a47; border-radius: 4px; font: 11px system-ui, sans-serif; }
+.sound-actions { display: flex; gap: 9px; margin-top: 17px; }
+.sound-actions button { min-height: 35px; padding: 7px 13px; font-size: 11px; flex: 1; }
+.sound-settings #audio-status { margin-top: 14px; line-height: 1.7; font-size: 10px; }
+.sound-note { color: #749083; font-size: 9px; margin-top: 10px; }
+body[data-screen="game"] .sound-controls, body[data-screen="pause"] .sound-controls, body[data-screen="help"] .sound-controls, body[data-screen="death"] .sound-controls, body[data-screen="ending"] .sound-controls { top: 88px; }
+body[data-screen="game"] .sound-settings, body[data-screen="pause"] .sound-settings, body[data-screen="help"] .sound-settings, body[data-screen="death"] .sound-settings, body[data-screen="ending"] .sound-settings { top: 132px; }
+.voice-caption { position: fixed; z-index: 3; top: 145px; left: 50%; transform: translateX(-50%); width: min(570px, calc(100% - 70px)); padding: 12px 20px; border: 1px solid #6c5b754d; border-radius: 6px; background: #0d1821ed; text-align: center; pointer-events: none; }
+.voice-caption > span { color: var(--gold); letter-spacing: .13em; font-size: 8px; }
+.voice-caption p { margin-top: 6px; color: #d1d3c4; font: italic 15px/1.7 Georgia, serif; }
+body[data-speaking="true"] #whisper { display: none; }
+body:has(.boss-hud:not([hidden])) .voice-caption { top: 183px; }
 @media (max-width: 900px) {
   .panel { padding: 26px; }
   .skill-grid { grid-template-columns: repeat(3, 1fr); }
@@ -153,7 +176,7 @@ body:has(.boss-hud:not([hidden])) .whisper { top: 181px; }
   .upgrade-card { padding: 17px 10px; }
 }
 @media (max-width: 650px) {
-  .brand { left: 20px; right: 20px; top: 17px; font-size: 9px; }
+  .brand { left: 20px; right: 170px; top: 17px; font-size: 9px; }
   .build-label { display: none; }
   .overlay { padding: 65px 14px 20px; align-items: center; }
   .panel { max-height: calc(100svh - 90px); padding: 24px 21px; border-radius: 10px; }
@@ -199,6 +222,15 @@ body:has(.boss-hud:not([hidden])) .whisper { top: 181px; }
   .whisper { top: 127px; font-size: 13px; }
   .boss-hud { top: 77px; }
   .boss-hud > div:first-child { font-size: 7px; }
+  .sound-controls { top: 15px; right: 13px; gap: 4px; }
+  .sound-button { padding: 6px 8px; font-size: 9px; }
+  .sound-icon { min-width: 24px; padding: 5px 6px; font-size: 13px; }
+  .sound-settings { top: 54px; right: 13px; width: min(305px, calc(100% - 26px)); }
+  body[data-screen="game"] .sound-controls { top: auto; bottom: 110px; right: 14px; }
+  body[data-screen="game"] .sound-settings { top: 90px; max-height: calc(100svh - 110px); }
+  .voice-caption { top: 128px; width: calc(100% - 35px); padding: 9px 15px; }
+  .voice-caption p { font-size: 12px; }
+  body:has(.boss-hud:not([hidden])) .voice-caption { top: 164px; }
 }
 @media (pointer: coarse) {
   .touch-controls { display: grid; grid-template-columns: repeat(3, 39px); grid-template-rows: repeat(2, 37px); gap: 4px; position: fixed; z-index: 3; left: 16px; bottom: 136px; }

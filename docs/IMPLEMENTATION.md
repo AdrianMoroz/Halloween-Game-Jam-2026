@@ -78,7 +78,15 @@ Immortality prevents all player damage and preserves HP. The unique dialogue and
 
 ## Rendering and deployment
 
-Three.js r180 is vendored with its original MIT license. Tiles and map walls use instancing. Basic geometry, materials and generated seal artwork avoid asset loading and external requests. Dynamic instance culling is disabled for visibility-changing map / overlay batches so stale bounds cannot hide new instances. Transient materials and instance buffers are released on level changes.
+Three.js r180 is vendored with its original MIT license. Tiles and map walls use instancing. Basic geometry, materials and generated seal artwork avoid external graphics requests. Dynamic instance culling is disabled for visibility-changing map / overlay batches so stale bounds cannot hide new instances. Transient materials and instance buffers are released on level changes.
+
+## Audio
+
+The v0.2 audio layer preserves the gameplay rules. `AudioManager` lazily creates and resumes an AudioContext from a user interaction, fetches the bundled MP3s using relative URLs, caches decoded buffers, and crossfades looping sources over 1.2 seconds. Narration ducks the music to 24% of its selected volume.
+
+Browser speech synthesis reads the existing story and whispers. Short chunks keep cancellation responsive; scene changes cancel queued speech. A generation token prevents callbacks from a canceled utterance advancing a later scene. Pause cancels the current utterance but retains its position so only the interrupted chunk repeats on resume. Start and completion watchdogs restore normal music volume if the speech engine stalls.
+
+The sound popover freezes simulation while allowing sound adjustments. Background tabs and game pause suspend audio. Voice selection, enable/mute states, and independent music/narration volumes use the separate `last-disciple-sound-v1` localStorage key. If storage or either audio API is unavailable, the game and written story remain usable.
 
 The application is a buildless set of static files with relative paths and `.nojekyll`. It can be served from a repository subpath on GitHub Pages. Local-only implementation was used because the requested publishing destination is GitHub Pages; no other hosting service was created or used.
 

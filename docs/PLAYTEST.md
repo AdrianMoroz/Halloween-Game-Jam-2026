@@ -1,6 +1,6 @@
 # Manual browser playtest
 
-The creation environment allowed simulation, application-flow and Three.js scene-graph checks, but did not provide a supported real-browser graphics test. Complete these checks on the target browsers and hardware.
+The creation environment allowed simulation, application-flow, audio-controller and Three.js scene-graph checks, but did not provide a supported real-browser graphics or sound test. Complete these checks on the target browsers and hardware.
 
 ## Startup and hosting
 
@@ -9,6 +9,18 @@ The creation environment allowed simulation, application-flow and Three.js scene
 - Open the browser's developer console. Confirm there are no module-loading or shader errors.
 - Test the published repository URL, including its `/REPOSITORY/` path.
 - Confirm all assets come from that project and no CDN is needed.
+
+## Music and narration
+
+- Load a fresh page. Click Begin your ascent and confirm music and prologue narration start after that interaction.
+- Open Sound. Try Test voice, each available voice, independent volume sliders, narration off, and Mute all. Confirm gameplay stays still while the settings are open.
+- Skip a passage, then replay it. Leave the story before it finishes and confirm the old narration stops.
+- Listen to a guard whisper. Confirm its caption appears and music lowers during speech, then returns to the selected volume.
+- Let a witness escape and confirm the horde music crossfade. Reach the summit and confirm the boss track.
+- Pause midway through narration, resume, and confirm only the interrupted passage repeats. Switch tabs and confirm sound pauses.
+- Refresh and confirm sound preferences persist independently of the campaign.
+- Check Chrome/Edge, Firefox, and the intended mobile browser. Voice lists may arrive late or differ by device. Confirm the written story and game still work with speech disabled or unavailable.
+- Listen through several repetitions of all three tracks for clipping, loop gaps, and a comfortable balance against narration.
 
 ## First courtyard
 
