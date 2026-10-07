@@ -1,4 +1,5 @@
 import * as THREE from '../vendor/three.module.js';
+import { DISPATCH_SECONDS, DISPOSAL_SECONDS } from './game.js';
 
 // Original, deterministic surface art. Data textures work offline and in the
 // scene tests; no downloaded models, image requests, or canvas APIs are needed.
@@ -188,12 +189,126 @@ export function characterModel(view, kind) {
   const pointer = view.cone(0.06, 0.16, view.material(color), 3);
   pointer.rotation.x = -Math.PI / 2; pointer.position.set(0, 0.05, -0.36); root.add(pointer);
   if (isBoss) root.scale.setScalar(1.12);
-  root.userData = { body, robeMaterial: cloth, ring, pointer, legs, arms, baseColor: profile.cloth, kind };
+  const ownedMaterials = [cloth];
+  let trail = null;
+  if (isPlayer || isBoss) {
+    const material = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0,
+      side: THREE.DoubleSide, depthWrite: false });
+    ownedMaterials.push(material); view.dynamicMaterials.add(material);
+    trail = view.mesh(view.geometry('sword-trail', () => new THREE.RingGeometry(0.28, 0.66, 20, 1, 0, Math.PI * 1.4)), material);
+    trail.rotation.x = -Math.PI / 2; trail.position.set(0.05, 0.94, -0.20);
+    trail.visible = false; body.add(trail);
+  }
+  root.userData = { body, robeMaterial: cloth, ring, pointer, legs, arms, trail, ownedMaterials,
+    baseColor: profile.cloth, kind };
   return root;
 }
 
-export function animateCharacter(mesh, actor, time, gameTime) {
-  const { body, legs, arms } = mesh.userData;
+const phase = (value, start = 0, end = 1) => {
+  const t = Math.max(0, Math.min(1, (value - start) / (end - start)));
+  return t * t * (3 - 2 * t);
+};
+
+function swordTrail(mesh, progress) {
+  const trail = mesh.userData.trail;
+  if (!trail) return;
+  trail.visible = progress > 0 && progress < 1;
+  trail.material.opacity = Math.sin(Math.max(0, Math.min(1, progress)) * Math.PI) * 0.7;
+  trail.rotation.z = -2.2 + progress * 3.4;
+}
+
+// The same final pose is used by a falling victim and its persistent corpse.
+function fallPose(mesh, progress) {
+  const p = phase(progress), { body, arms, legs } = mesh.userData;
+  body.position.set(0, 0.16 * p, 0.45 * p);
+  body.rotation.set(-Math.PI / 2 * p, 0, -0.18 * p);
+  body.scale.setScalar(THREE.MathUtils.lerp(1, 0.68, p));
+  arms[0].rotation.set(0.9 * (1 - p), 0, 0.40 * p);
+  arms[1].rotation.set(0.9 * (1 - p), 0, -0.65 * p);
+  legs[0].rotation.set(0, 0, 0.12 * p); legs[1].rotation.set(0, 0, -0.18 * p);
+  mesh.userData.ring.visible = mesh.userData.pointer.visible = false;
+}
+
+export function corpseModel(view) {
+  const root = characterModel(view, 'guard'), { ring, pointer, ownedMaterials } = root.userData;
+  root.remove(ring, pointer); fallPose(root, 1);
+  const burn = new THREE.Group(); burn.visible = false;
+  const material = new THREE.MeshBasicMaterial({ color: 0x84d7b3, transparent: true, opacity: 0.6, depthWrite: false });
+  ownedMaterials.push(material); view.dynamicMaterials.add(material);
+  for (let i = 0; i < 5; i++) {
+    const flame = view.cone(0.075, 0.50, material, 5);
+    flame.position.set(Math.cos(i * 1.26) * 0.38, 0.25, Math.sin(i * 1.26) * 0.38);
+    burn.add(flame);
+  }
+  const halo = view.torus(0.42, 0.018, material); halo.position.y = 0.04; burn.add(halo);
+  root.add(burn); Object.assign(root.userData, { burn, burnMaterial: material });
+  return root;
+}
+
+export function animateCorpse(mesh, disposal, gameTime) {
+  fallPose(mesh, 1);
+  const { body, burn, burnMaterial } = mesh.userData;
+  burn.visible = Boolean(disposal);
+  if (!disposal) return;
+  const progress = Math.min(1, disposal.elapsed / DISPOSAL_SECONDS), consumed = phase(progress, 0.75, 1);
+  body.scale.multiplyScalar(1 - consumed * 0.97); body.position.y += consumed * 0.16;
+  burnMaterial.opacity = 0.4 + Math.sin(progress * Math.PI) * 0.3;
+  burn.children.slice(0, 5).forEach((flame, i) => {
+    const flicker = Math.sin(gameTime * 13 + i * 1.7);
+    flame.position.y = 0.25 + progress * 0.20 + flicker * 0.035;
+    flame.scale.set(0.8 + flicker * 0.2, 0.65 + progress + flicker * 0.22, 0.8 + flicker * 0.2);
+  });
+}
+
+export function animateCharacter(mesh, actor, time, gameTime, { execution = null } = {}) {
+  const { body, legs, arms, trail, ring, pointer, kind } = mesh.userData;
+  body.position.set(0, 0, 0); body.rotation.set(0, 0, 0); body.scale.setScalar(1);
+  ring.visible = pointer.visible = true; if (trail) trail.visible = false;
+  for (const limb of [...legs, ...arms]) limb.rotation.set(0, 0, 0);
+
+  if (actor.death) {
+    const progress = (gameTime - actor.death.startedAt) / DISPATCH_SECONDS;
+    fallPose(mesh, actor.death.method === 'execution' ? 1 : progress);
+    if (actor.death.autoDispose) {
+      const dissolved = phase(progress, 0.25, 1);
+      body.scale.multiplyScalar(1 - dissolved); body.position.y += dissolved * 0.3;
+    }
+    return;
+  }
+
+  const action = actor.execution || execution;
+  if (action) {
+    const t = Math.min(1, action.elapsed / action.duration);
+    if (kind === 'player') {
+      const grab = phase(t, 0, 0.18), windup = phase(t, 0.20, 0.46);
+      const strike = phase(t, 0.46, 0.62), release = phase(t, 0.64, 1);
+      body.position.z = 0.24 * grab * (1 - release);
+      body.position.x = -0.16 * grab * (1 - release);
+      body.rotation.set(-0.08 * windup + 0.16 * strike - 0.08 * release,
+        -0.35 * windup + 0.70 * strike - 0.35 * release, 0);
+      arms[0].rotation.set(1.3 * grab * (1 - release) - 0.1 * release, -0.4 * grab * (1 - release), 0.06);
+      arms[1].rotation.set(1.2 * grab + 1.15 * windup - 2.8 * strike + 0.32 * release,
+        -0.55 * windup + 0.55 * strike, -0.28 * windup + 0.20 * strike + 0.02 * release);
+      legs[0].rotation.x = -0.12 * (1 - release); legs[1].rotation.x = 0.12 * (1 - release);
+      swordTrail(mesh, (t - 0.48) / 0.18);
+    } else {
+      const falling = phase(t, 0.55, 0.93);
+      fallPose(mesh, falling); body.position.z -= 0.18 * (1 - falling);
+      body.position.x = 0.10 * (1 - falling) * phase(t, 0, 0.18);
+      body.rotation.x -= 0.08 * (1 - falling);
+    }
+    return;
+  }
+
+  if (actor.disposal) {
+    const kneel = phase(actor.disposal.elapsed, 0, 0.25);
+    body.position.set(0, -0.20 * kneel, 0.24 * kneel); body.rotation.x = -0.22 * kneel;
+    legs[0].rotation.x = legs[1].rotation.x = -0.95 * kneel;
+    arms[0].rotation.set(1.1 * kneel, -0.3 * kneel, 0.1);
+    arms[1].rotation.set(0.9 * kneel, 0.3 * kneel, -0.1);
+    return;
+  }
+
   const frozen = actor.frozenUntil > gameTime;
   const walking = Boolean(actor.motion) && !frozen;
   const pace = frozen ? 0 : Math.sin(time * (mesh.userData.kind === 'horde' ? 12 : 14));
@@ -206,5 +321,20 @@ export function animateCharacter(mesh, actor, time, gameTime) {
   body.rotation.x = actor.state === 'flee' ? -0.08 : 0;
   if (actor.state === 'captured' || actor.state === 'executing') {
     body.rotation.x = 0.18; arms[0].rotation.x = arms[1].rotation.x = -0.45;
+  }
+  if (frozen) return;
+  if (actor.warning) {
+    const ready = phase(1 - actor.warning.remaining / actor.warning.duration);
+    arms[1].rotation.x = 1.4 + ready * 0.8; arms[1].rotation.y = -0.45;
+    body.rotation.y = -0.20 * ready;
+  } else if (Number.isFinite(actor.attackStartedAt)) {
+    const t = (gameTime - actor.attackStartedAt) / 0.4;
+    if (t >= 0 && t < 1) {
+      const lift = phase(t, 0, 0.18), strike = phase(t, 0.18, 0.60), recover = phase(t, 0.60, 1);
+      arms[1].rotation.x = -0.13 + lift * 2.3 - strike * 2.9 + recover * 0.6;
+      arms[1].rotation.y = -0.4 * lift + 0.4 * strike;
+      body.rotation.y = -0.35 * lift + 0.7 * strike - 0.35 * recover;
+      swordTrail(mesh, (t - 0.2) / 0.4);
+    }
   }
 }

@@ -1,9 +1,11 @@
 import { DEFAULT_STATS, DEFAULT_LOADOUT, DIRECTIONS, SKILL_BY_ID, LEVELS, BOSS_LEVEL, UPGRADES } from './content.js';
 import { Grid, key, sameTile, manhattan, shortestPath, shortestPathToAny, lineOfSight,
-  visibleTiles, rotateOffsets } from './grid.js';
+  visibleTiles, rotateOffsets, actorPosition } from './grid.js';
 
 export const EXECUTION_SECONDS = 2.5;
 export const DISPOSAL_SECONDS = 2;
+// Cosmetic only: spell victims are already dead while their model falls.
+export const DISPATCH_SECONDS = 0.65;
 export const FIXED_STEP = 1 / 60;
 
 export function freshRun() {
@@ -155,10 +157,13 @@ export class Game {
     this.emit('alert', { guardId: guard.id, reason });
   }
 
-  killGuard(guard, autoDispose = false) {
+  killGuard(guard, autoDispose = false, method = 'spell') {
     if (!guard || guard.state === 'dead') return false;
+    const facing = method === 'execution' ? this.player.facing : guard.facing;
+    guard.death = { startedAt: this.time, method, autoDispose, facing, position: actorPosition(guard) };
     guard.state = 'dead'; guard.motion = null;
-    if (!autoDispose) this.corpses.push({ id: `corpse-${guard.id}`, x: guard.x, y: guard.y });
+    if (!autoDispose) this.corpses.push({ id: `corpse-${guard.id}`, x: guard.x, y: guard.y, facing,
+      settlesAt: this.time + (method === 'execution' ? 0 : DISPATCH_SECONDS) });
     this.emit('kill', { x: guard.x, y: guard.y, autoDispose });
     return true;
   }
@@ -232,7 +237,8 @@ export class Game {
     this.player.damageCooldown = 0.7; this.player.disposal = null;
     this.emit('damage', { amount });
     if (this.player.hp <= 0) {
-      this.state = 'dead'; this.emit('death', { nightmare: Boolean(this.boss?.immune) });
+      this.player.death = { startedAt: this.time }; this.state = 'dead';
+      this.emit('death', { nightmare: Boolean(this.boss?.immune) });
     }
     return true;
   }
@@ -249,6 +255,7 @@ export class Game {
   strike() {
     if (this.state !== 'playing' || this.mode !== 'boss' || this.player.execution || this.player.motion || this.player.attackCooldown > 0) return false;
     this.player.attackCooldown = 0.4;
+    this.player.attackStartedAt = this.time;
     const facing = DIRECTIONS[this.player.facing];
     const tile = { x: this.player.x + facing.x, y: this.player.y + facing.y };
     this.emit('strike', { tiles: [tile] });
@@ -261,7 +268,10 @@ export class Game {
     if (this.boss.immune) { this.emit('immune'); return; }
     this.boss.hp = Math.max(0, this.boss.hp - amount);
     this.emit('bossHit');
-    if (this.boss.hp === 0) { this.boss.state = 'dead'; this.state = 'won'; this.emit('victory'); }
+    if (this.boss.hp === 0) {
+      this.boss.death = { startedAt: this.time }; this.boss.state = 'dead';
+      this.state = 'won'; this.emit('victory');
+    }
   }
 
   updateBoss(dt) {
@@ -272,6 +282,7 @@ export class Game {
     if (boss.warning) {
       boss.warning.remaining -= dt;
       if (boss.warning.remaining <= 0) {
+        boss.attackStartedAt = this.time;
         if (boss.warning.tiles.some(tile => sameTile(tile, this.player))) this.damagePlayer(boss.damage);
         this.emit('bossAttack', { tiles: boss.warning.tiles });
         boss.warning = null; boss.cooldown = boss.immune ? 0.65 : 1.1;
@@ -349,7 +360,7 @@ export class Game {
       const execution = this.player.execution;
       execution.elapsed += dt;
       if (execution.elapsed + 1e-8 >= execution.duration) {
-        this.killGuard(this.guards.find(g => g.id === execution.guardId));
+        this.killGuard(this.guards.find(g => g.id === execution.guardId), false, 'execution');
         this.player.execution = null;
       }
     } else if (!this.player.motion) {
@@ -385,7 +396,7 @@ export class Game {
     if (this.state !== 'playing') return;
     for (const [index, whisper] of (this.level.whispers || []).entries()) {
       if (!this.spottedWhispers.has(index) && manhattan(whisper, this.player) <= 2) {
-        this.spottedWhispers.add(index); this.emit('whisper', { text: whisper.text });
+        this.spottedWhispers.add(index); this.emit('whisper', { text: whisper.text, index });
       }
     }
     if (!this.boss && !this.player.motion && !this.player.execution && sameTile(this.player, this.level.exit)) {

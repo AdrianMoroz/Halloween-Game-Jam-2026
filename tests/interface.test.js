@@ -51,13 +51,14 @@ function app(initialSave = null) {
   };
   class FakeView {
     setGame(game, demo) { this.game = game; this.demo = demo; }
-    resize() {} flash() {} render() {}
+    resize() {} flash() {} render(dt) { this.lastRenderDelta = dt; }
     toggleCamera() { this.overview = !this.overview; return this.overview; }
   }
   class FakeAudio {
     constructor(options) {
       this.options = options; this.settings = { musicVolume: .48, narrationVolume: .9, narrationEnabled: true, muted: false, voiceURI: '' };
-      this.supportsNarration = true; this.lastCue = null; this.speaking = false; this.error = ''; this.paused = false;
+      this.supportsNarration = true; this.supportsSpeech = true; this.hasRecordings = false;
+      this.lastCue = null; this.speaking = false; this.error = ''; this.paused = false;
     }
     englishVoices() { return []; }
     update() { this.options.onStatus(this); }
@@ -212,4 +213,23 @@ test('disabling narration leaves the written prologue and gameplay available', (
   ui.click('close-sound'); ui.click('new-run');
   assert.ok(ui.get('overlay').innerHTML.includes(content.OPENING[0])); ui.click('story-next'); ui.click('launch');
   assert.equal(ui.evaluate('screen'), 'game');
+});
+
+test('pause and sound settings pass zero animation time to the renderer', () => {
+  const ui = app(); launch(ui); ui.evaluate('frame(16)');
+  assert.ok(ui.evaluate('view.lastRenderDelta') > 0);
+  ui.click('pause-button'); ui.evaluate('frame(32)'); assert.equal(ui.evaluate('view.lastRenderDelta'), 0);
+  ui.click('resume'); ui.click('sound-button'); ui.evaluate('frame(48)');
+  assert.equal(ui.evaluate('view.lastRenderDelta'), 0);
+});
+
+test('different whispers and immortal story branches select separate recording cues', () => {
+  const ui = app(); launch(ui);
+  ui.evaluate('game.emit("whisper", {text: "First whisper.", index: 0}); handleEvents();');
+  assert.equal(ui.evaluate('audio.lastCue.options.key'), 'whisper-lower-1');
+  ui.evaluate('game.emit("whisper", {text: "Second whisper.", index: 1}); handleEvents();');
+  assert.equal(ui.evaluate('audio.lastCue.options.key'), 'whisper-lower-2');
+  ui.evaluate('run.total = 18; run.killed = 17; revelation();');
+  assert.equal(ui.evaluate('audio.lastCue.options.key'), 'revelation-immortal');
+  ui.evaluate('death(true);'); assert.equal(ui.evaluate('audio.lastCue.options.key'), 'death-immortal');
 });

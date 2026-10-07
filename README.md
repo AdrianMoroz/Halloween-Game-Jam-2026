@@ -8,11 +8,15 @@ A static Three.js browser game implementing the supplied Radiant Yang Sect / Yin
 
 There are three playable courtyards, followed by a summit encounter. Sneak past guards or execute them, intercept fleeing witnesses, and survive a horde if a witness escapes. Choose four skills before each level and upgrade HP, movement speed, vision, or casts between levels. Campaign stealth kills determine the grandmaster's strength and the ≥90% immortal branch.
 
-This version adds three original music loops and browser-generated narration for story scenes and guard whispers. No narration recordings, API keys, or plugin connections are required.
+This version includes three music loops and narration for story scenes and guard whispers. Browser voices work by default; your own MP3 recordings can replace individual scenes or passages through `src/narration.js`. No narration recordings, API keys, or plugin connections are required to play.
 
 The presentation update adds a closer, player-following overhead perspective inspired by classic tactical stealth games. Characters have articulated limbs, layered outfits, armor, and swords; courtyard walls have textured masonry, moss, stone footings, and bevelled tile caps. Press **C** or the camera button beside Pause to switch between the close camera and a wide planning view.
 
+Executions now show a paired grab, sword wind-up, dispatch, and victim collapse during the existing 2.5-second commitment. Spell victims fall or dissolve, corpse disposal kneels and burns with spectral flames, and the summit includes sword swings and terminal falls. These poses preserve the existing damage, kill, and disposal timing and respect pauses and fog.
+
 [Offline scene preview](docs/images/close-camera-offline.png): this illustrates the camera and model geometry using approximate software lighting. It is not a browser screenshot or a substitute for a WebGL playtest.
+
+[Offline dispatch poses](docs/images/dispatch-offline.png) show the paired grab, wind-up, strike, collapse, and spectral disposal with the same lighting caveat.
 
 ## Play locally on Windows
 
@@ -46,7 +50,7 @@ Click **Begin your ascent** to start playback. Browser autoplay rules require th
 
 Open **♪ Sound** to adjust music and voice volumes, choose an available English voice, test it, turn narration off, or mute everything. The adjacent **↻** and **▸|** buttons replay or skip the current narration. Gameplay pauses while sound settings are open. Sound preferences persist separately from the campaign.
 
-Narration is a placeholder using browser voices, with different pacing and pitch for the narrator, disciples, and grandmaster. Voice quality and availability depend on the browser and operating system. Written story text remains available when narration is muted or unsupported. Leaving a scene stops its narration; pausing or switching tabs suspends sound, and resuming repeats only the interrupted short passage.
+Default narration uses browser voices, with different pacing and pitch for the narrator, disciples, and grandmaster. Voice quality and availability depend on the browser and operating system. Your own MP3s can replace entire cues or individual passages; the recording script and setup are in `docs/AUDIO.md` and `docs/NARRATION-SCRIPT.md`. Written story text remains available when narration is muted or unsupported. Leaving a scene stops its narration. Pausing or switching tabs suspends sound; recordings resume at the paused position, while browser speech repeats only the interrupted short passage.
 
 See `docs/AUDIO.md` for the music source, audio implementation, and asset replacement notes.
 
@@ -110,9 +114,10 @@ The invincible branch stays unwinnable. Dying in it offers another attempt at th
 | `src/game.js` | Renderer-independent fixed-step gameplay simulation and campaign accounting |
 | `src/view.js` | Three.js scene, instanced map tiles, actors, fog visibility, target previews and effects |
 | `src/camera.js` | Close overhead tracking, smooth framing, responsive perspective, and wide planning view |
-| `src/art.js` | Original procedural surface textures and shared, articulated character models |
+| `src/art.js` | Procedural surfaces, shared character rigs, dispatch, sword, fall and disposal poses |
 | `src/main.js` | Menus, input, HUD, transitions, local campaign persistence, frame loop |
-| `src/audio.js` | Music crossfades, narration queues, voice selection, ducking and sound preferences |
+| `src/audio.js` | Music crossfades, recorded/speech narration queues, ducking and sound preferences |
+| `src/narration.js` | Optional MP3 cue mappings; empty by default |
 | `assets/music/` | Original bundled stealth, horde and boss music loops |
 | `styles.css` | Layout and interface |
 | `tests/` | Gameplay, application-flow, audio-controller and scene-graph tests |
@@ -121,6 +126,7 @@ The invincible branch stays unwinnable. Dying in it offers another attempt at th
 | `serve.py`, `start.bat`, `start.sh` | Local launchers |
 | `docs/IMPLEMENTATION.md` | Provisional rules and technical notes |
 | `docs/AUDIO.md` | Audio behavior, asset provenance and editing notes |
+| `docs/NARRATION-SCRIPT.md` | Cue names, speaker roles and matching recording dialogue |
 | `docs/PLAYTEST.md` | Manual browser playtest checklist |
 | `vendor/` | Three.js r180 and its MIT license |
 
@@ -133,13 +139,13 @@ npm test
 npm run check
 ```
 
-At handoff: **74 tests pass**. They exercise real gameplay rules, campaign progression, menu/button flow in a DOM model, and real Three.js scene construction without a GPU. Camera and asset checks cover smooth tracking, wide framing on landscape and portrait screens, shared horde geometry, articulated limbs, fog hiding, and resource cleanup. Audio tests cover user activation, track transitions, narration queues, interruption, replay, mute, preferences, and unavailable APIs using controlled audio/speech models. They also check that the bundled tracks exist.
+At handoff: **91 tests pass**. They exercise real gameplay rules, campaign progression, menu/button flow in a DOM model, and real Three.js scene construction without a GPU. Presentation checks cover tracking, wide framing, shared horde geometry, paired execution stages, falling victims, corpse handoff, spectral disposal, pause behavior, fog hiding, and resource cleanup. Audio tests cover activation, crossfades, recorded/speech queues, exact recording resume offsets, late-load cancellation, failed-file fallback, replay, mute, preferences, and unavailable APIs using controlled audio/speech models. They also check that the bundled music tracks exist.
 
 **A real-browser graphics or audio playtest was not available in the creation environment.** Automated tests do not validate shader compilation, CSS layout, frame rate, speaker output, voice quality, or gameplay feel. The MP3 files were checked for valid decoding, but not assessed by listening. Follow `docs/PLAYTEST.md` before treating this as a finished release.
 
 ## Prototype limitations
 
-- Original procedural characters and architecture, with simple articulated walking poses; no imported character models or motion-captured animation.
+- Procedural characters and architecture, with authored articulated action poses; no imported character models or motion-captured animation.
 - Synthesized prototype music and browser narration; no recorded voice acting. Different devices may sound different.
 - Three small authored courtyards; no editor or procedural campaign generator.
 - Final-boss moves and balance are provisional. The supplied outline defines scaling and immortality but not a full boss combat loop.

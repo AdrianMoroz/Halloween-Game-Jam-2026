@@ -12,7 +12,7 @@ The following values and combat details fill gaps in the outline and are provisi
 - Fleeing speed is patrol speed × 1.55.
 - Execution lasts 2.5 seconds, within the specified 2–3 seconds.
 - Disposal lasts exactly 2 stationary seconds. Moving, casting, or taking damage resets the current disposal timer.
-- Other entities continue moving during execution. The target guard is captured immediately when the player commits to moving onto its tile; the execution begins on arrival. That guard stops movement and perception. A corpse appears after execution completes.
+- Other entities continue moving during execution. The target guard is captured immediately when the player commits to moving onto its tile; the execution begins on arrival. That guard stops movement and perception. A corpse appears after execution completes. Rendering samples the same execution timer for both participants: grab, wind-up, strike, and collapse, followed by an identical oriented corpse pose.
 - Guard vision covers the next three forward rows, with three tiles in each row. Walls block both guard and player sight. Diagonal wall corners cannot be seen through.
 - Fog uses current vision only: out-of-sight tiles return to black, and hidden actors and wall meshes are removed from visibility.
 
@@ -89,6 +89,10 @@ Three.js r180 is vendored with its original MIT license. Tiles and map walls use
 The v0.2 audio layer preserves the gameplay rules. `AudioManager` lazily creates and resumes an AudioContext from a user interaction, fetches the bundled MP3s using relative URLs, caches decoded buffers, and crossfades looping sources over 1.2 seconds. Narration ducks the music to 24% of its selected volume.
 
 Browser speech synthesis reads the existing story and whispers. Short chunks keep cancellation responsive; scene changes cancel queued speech. A generation token prevents callbacks from a canceled utterance advancing a later scene. Pause cancels the current utterance but retains its position so only the interrupted chunk repeats on resume. Start and completion watchdogs restore normal music volume if the speech engine stalls.
+
+Optional MP3 cue mappings in `src/narration.js` accept a whole-scene recording or one recording per original passage. One-shot Web Audio sources use a separate narration gain and the existing ducking state. Pause saves the source offset before stopping it; resume creates a new source at that offset. Queue identity and generation tokens discard stale loads and end callbacks. Failed or stalled loads fall back to speech without changing story text. Recordings decode lazily, are cached by URL, and are not required by the default build.
+
+Dispatch poses live in `src/art.js`. Cosmetic death metadata is captured before clearing a victim's movement, so a spell fall starts at the interpolated visual position while the guard is already dead in the simulation. For 0.65 seconds the view retains that actor, then hands it off to its corpse or removes an auto-dispatched victim. Corpses remain available to gameplay immediately. Disposal poses sample the two-second timer and reset visually if interrupted. Sword trails and corpse flames reuse cached geometry; per-entity materials are released together. A separate terminal render timer finishes fatal falls without stepping gameplay, and pause/help/sound settings pass zero render delta.
 
 The sound popover freezes simulation while allowing sound adjustments. Background tabs and game pause suspend audio. Voice selection, enable/mute states, and independent music/narration volumes use the separate `last-disciple-sound-v1` localStorage key. If storage or either audio API is unavailable, the game and written story remain usable.
 
