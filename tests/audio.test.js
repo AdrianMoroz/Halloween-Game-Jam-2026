@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 const flush = () => new Promise(resolve => setImmediate(resolve));
 
-function environment({ unsupported = false, blockedStorage = false, fetcher } = {}) {
+function environment({ unsupported = false, speechUnsupported = false, blockedStorage = false, fetcher, recordings } = {}) {
   const data = new Map(), timers = new Map(), events = {}, sources = [], contexts = [], requests = [];
   let timerId = 0;
   class Param {
@@ -21,7 +21,7 @@ function environment({ unsupported = false, blockedStorage = false, fetcher } = 
     createGain() { return { gain: new Param(), connect() {}, disconnect() {} }; }
     createBufferSource() {
       const source = { connect() {}, disconnect() { this.disconnected = true; },
-        start() { this.started = true; }, stop(time) { this.stopped = time ?? true; } };
+        start(when = 0, offset = 0) { this.started = true; this.offset = offset; }, stop(time) { this.stopped = time ?? true; } };
       sources.push(source); return source;
     }
     async resume() { this.state = 'running'; }
@@ -42,15 +42,15 @@ function environment({ unsupported = false, blockedStorage = false, fetcher } = 
   };
   const host = {
     AudioContext: unsupported ? undefined : Context,
-    speechSynthesis: unsupported ? undefined : speech,
-    SpeechSynthesisUtterance: unsupported ? undefined : Utterance,
+    speechSynthesis: unsupported || speechUnsupported ? undefined : speech,
+    SpeechSynthesisUtterance: unsupported || speechUnsupported ? undefined : Utterance,
     localStorage: { getItem: key => data.get(key) ?? null, setItem(key, value) { if (blockedStorage) throw Error('disabled'); data.set(key, value); } },
     fetch: async url => { requests.push(url); return fetcher ? await fetcher(url) : { ok: true, arrayBuffer: async () => new ArrayBuffer(8) }; },
     setTimeout(callback, delay) { const id = ++timerId; timers.set(id, { callback, delay }); return id; },
     clearTimeout(id) { timers.delete(id); },
   };
   const captions = [], status = [];
-  const manager = new AudioManager({ host, onNarration: line => captions.push(line), onStatus: audio => status.push(audio.error) });
+  const manager = new AudioManager({ host, recordings, onNarration: line => captions.push(line), onStatus: audio => status.push(audio.error) });
   return { manager, host, data, timers, events, sources, contexts, requests, speech, captions, status };
 }
 
@@ -211,4 +211,100 @@ test('dispose stops music and speech and unregisters voice-list listeners', asyn
   assert.equal(env.manager.disposed, true); assert.equal(env.contexts[0].state, 'closed');
   assert.equal(env.manager.speaking, false); assert.equal(env.timers.size, 0); assert.equal(env.events.voiceschanged, undefined);
   assert.ok(env.sources.every(source => source.disconnected));
+});
+
+test('a full-scene MP3 uses the written script, ducks music, and replaces speech for that cue', async () => {
+  const env = environment({ recordings: { opening: 'opening.mp3' } }); env.manager.unlock(); await flush();
+  env.manager.narrate(['First passage.', 'Second passage.'], { key: 'opening' }); await flush();
+  const recording = env.manager.recording;
+  assert.ok(recording); assert.equal(recording.source.loop, false); assert.equal(recording.gain.gain.value, .9);
+  assert.equal(env.speech.history.length, 0); assert.equal(env.captions.at(-1).text, 'First passage. Second passage.');
+  assert.equal(env.manager.musicBus.gain.value, .48 * .24); assert.ok(env.requests.includes('opening.mp3'));
+  recording.source.onended(); assert.equal(env.manager.speaking, false); assert.equal(env.manager.musicBus.gain.value, .48);
+  assert.equal(recording.source.disconnected, true); assert.equal(env.timers.size, 0);
+});
+
+test('per-passage clips can mix recorded speakers and browser voices in order', async () => {
+  const env = environment({ recordings: { scene: ['narrator.mp3', null, 'master.mp3'] } });
+  env.manager.unlock(); await flush();
+  env.manager.narrate([{ text: 'The mountain.', role: 'narrator' }, { text: 'The watchman.', role: 'disciple' },
+    { text: 'My sect.', role: 'grandmaster' }], { key: 'scene' }); await flush();
+  env.manager.recording.source.onended(); assert.equal(env.speech.current.text, 'The watchman.');
+  assert.equal(env.captions.at(-1).label, 'A DISCIPLE'); env.speech.finish(); await flush();
+  assert.ok(env.requests.includes('master.mp3')); assert.equal(env.captions.at(-1).label, 'THE GRANDMASTER');
+  env.manager.recording.source.onended(); assert.equal(env.manager.speaking, false);
+});
+
+test('recordings wait for user activation and replay reuses the decoded clip', async () => {
+  const env = environment({ recordings: { opening: 'opening.mp3' } });
+  assert.equal(env.manager.narrate('The prologue.', { key: 'opening' }), false); await flush();
+  assert.equal(env.requests.length, 0); env.manager.unlock(); await flush(); env.manager.replay(); await flush();
+  env.manager.recording.source.onended(); env.manager.replay(); await flush();
+  assert.equal(env.requests.filter(url => url === 'opening.mp3').length, 1);
+  assert.equal(env.manager.recording.source.offset, 0);
+});
+
+test('recorded narration resumes at its paused offset and replay starts from the beginning', async () => {
+  const env = environment({ recordings: { opening: 'opening.mp3' } }); env.manager.unlock(); await flush();
+  env.manager.narrate('A long prologue.', { key: 'opening' }); await flush();
+  const previous = env.manager.recording, staleEnd = previous.source.onended;
+  env.contexts[0].currentTime = 5; env.manager.pause();
+  assert.equal(previous.source.disconnected, true); assert.equal(env.contexts[0].state, 'suspended');
+  env.manager.resume(); await flush(); assert.equal(env.manager.recording.source.offset, 5);
+  const resumed = env.manager.recording; staleEnd(); assert.equal(env.manager.recording, resumed);
+  env.manager.stopNarration(); env.manager.replay(); await flush();
+  assert.equal(env.manager.recording.source.offset, 0); assert.equal(env.requests.filter(url => url === 'opening.mp3').length, 1);
+});
+
+test('a missing MP3 falls back to speech without changing the script or preventing retry', async () => {
+  let missing = true;
+  const env = environment({ recordings: { opening: 'opening.mp3' },
+    fetcher: async url => ({ ok: url !== 'opening.mp3' || !missing, arrayBuffer: async () => new ArrayBuffer(8) }) });
+  env.manager.unlock(); await flush(); env.manager.narrate('The written prologue.', { key: 'opening' }); await flush();
+  assert.equal(env.speech.current.text, 'The written prologue.'); assert.equal(env.manager.recording, null);
+  env.speech.finish(); assert.equal(env.manager.musicBus.gain.value, .48);
+  missing = false; env.manager.replay(); await flush(); assert.ok(env.manager.recording);
+  assert.equal(env.requests.filter(url => url === 'opening.mp3').length, 2);
+});
+
+test('a canceled recording load cannot start playback over a newer scene', async () => {
+  let resolveClip;
+  const env = environment({ recordings: { old: 'old.mp3' }, fetcher: url => url === 'old.mp3' ?
+    new Promise(resolve => { resolveClip = resolve; }) : { ok: true, arrayBuffer: async () => new ArrayBuffer(8) } });
+  env.manager.unlock(); await flush(); env.manager.narrate('Old scene.', { key: 'old' });
+  env.manager.narrate('New scene.'); resolveClip({ ok: true, arrayBuffer: async () => new ArrayBuffer(8) }); await flush();
+  assert.equal(env.manager.recording, null); assert.equal(env.speech.current.text, 'New scene.');
+  assert.equal(env.sources.length, 1); assert.equal(env.timers.size, 2);
+});
+
+test('recording volume, mute, and disposal apply independently from music and release sources', async () => {
+  const env = environment({ recordings: { opening: 'opening.mp3' } }); env.manager.unlock(); await flush();
+  env.manager.narrate('Recorded prologue.', { key: 'opening' }); await flush();
+  const source = env.manager.recording.source; env.manager.setNarrationVolume(.3);
+  assert.equal(env.manager.recording.gain.gain.value, .3); assert.equal(env.manager.settings.musicVolume, .48);
+  env.manager.setMuted(true); assert.equal(source.disconnected, true); assert.equal(env.manager.recording, null);
+  assert.equal(env.manager.musicBus.gain.value, 0);
+  env.manager.setMuted(false); env.manager.replay(); await flush(); const replayed = env.manager.recording.source;
+  env.manager.dispose(); assert.equal(replayed.disconnected, true); assert.equal(env.contexts[0].state, 'closed');
+});
+
+test('recordings work without speech synthesis and a failed recording still leaves sound usable', async () => {
+  const env = environment({ speechUnsupported: true, recordings: { opening: 'opening.mp3' } });
+  assert.equal(env.manager.supportsSpeech, false); assert.equal(env.manager.supportsNarration, true);
+  env.manager.unlock(); await flush(); env.manager.narrate('Recorded scene.', { key: 'opening' }); await flush();
+  assert.ok(env.manager.recording); env.manager.recording.source.onended();
+  assert.equal(env.manager.speaking, false); assert.equal(env.manager.musicBus.gain.value, .48);
+  env.manager.narrate('Unrecorded text.'); assert.equal(env.manager.speaking, false);
+});
+
+test('stalled recording loads time out to speech and late completions cannot revive playback', async () => {
+  let resolveClip;
+  const env = environment({ recordings: { opening: 'opening.mp3' }, fetcher: url => url === 'opening.mp3' ?
+    new Promise(resolve => { resolveClip = resolve; }) : { ok: true, arrayBuffer: async () => new ArrayBuffer(8) } });
+  env.manager.unlock(); await flush(); env.manager.narrate('The prologue.', { key: 'opening' });
+  [...env.timers.values()].find(timer => timer.delay === 8000).callback();
+  assert.equal(env.speech.current.text, 'The prologue.');
+  resolveClip({ ok: true, arrayBuffer: async () => new ArrayBuffer(8) }); await flush();
+  assert.equal(env.manager.recording, null); assert.equal(env.sources.length, 1);
+  env.speech.finish(); assert.equal(env.manager.musicBus.gain.value, .48);
 });

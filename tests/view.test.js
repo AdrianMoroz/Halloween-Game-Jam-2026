@@ -6,6 +6,7 @@ import { GameView, THREE } from '../src/view.js';
 import { Game } from '../src/game.js';
 import { LEVELS, DEFAULT_STATS, DEFAULT_LOADOUT } from '../src/content.js';
 import { TacticalCamera } from '../src/camera.js';
+import { EXECUTION_SECONDS, DISPATCH_SECONDS } from '../src/game.js';
 
 function sceneView(game) {
   const view = Object.create(GameView.prototype);
@@ -97,4 +98,94 @@ test('a full horde reuses the first reinforcement geometry instead of growing an
   view.setGame(new Game(LEVELS[1])); view.render(.016, 3);
   assert.deepEqual([...view.textures.values()], textures);
   assert.equal(view.entities.size, 7);
+});
+
+test('execution shows two separated participants, a raised sword, a strike, and a matching corpse', () => {
+  const game = new Game(LEVELS[0]), guard = game.guards[0];
+  game.guards = [guard]; Object.assign(guard, { x: 9, y: 14, facing: 'north', motion: null });
+  const view = sceneView(game);
+  assert.equal(game.move('north'), true); game.update(.25);
+  assert.ok(game.player.execution); assert.equal(game.corpses.length, 0);
+  game.player.execution.elapsed = .95; view.render(0, 1);
+  const player = view.entities.get('player'), victim = view.entities.get(guard.id);
+  assert.ok(player.userData.body.position.z > victim.userData.body.position.z);
+  assert.ok(player.userData.arms[1].rotation.x > 1.5);
+  assert.equal(game.move('east'), false); assert.equal(game.cast(0), false);
+  game.player.execution.elapsed = 1.4; view.render(0, 1.4);
+  assert.equal(player.userData.trail.visible, true); assert.ok(victim.userData.body.rotation.x < 0.14);
+  game.player.execution.elapsed = EXECUTION_SECONDS - .01; view.render(0, 2.49);
+  victim.userData.body.updateMatrix(); const finalPose = victim.userData.body.matrix.clone();
+  game.update(.01); view.render(0, 2.5);
+  assert.equal(game.player.execution, null); assert.equal(game.guards[0].state, 'dead');
+  assert.equal(view.entities.has(guard.id), false);
+  const corpse = view.entities.get(`corpse-${guard.id}`); corpse.userData.body.updateMatrix();
+  assert.deepEqual(corpse.userData.body.matrix.elements, finalPose.elements);
+  assert.equal(corpse.rotation.y, victim.rotation.y);
+  assert.equal(player.userData.trail.visible, false);
+});
+
+test('paused execution poses do not advance with wall-clock time', () => {
+  const game = new Game(LEVELS[0]); game.player.x = game.guards[0].x; game.player.y = game.guards[0].y;
+  game.beginExecution(game.guards[0]); game.player.execution.elapsed = 1.4;
+  const view = sceneView(game); view.render(0, 1);
+  const pose = () => [view.entities.get('player'), view.entities.get(game.guards[0].id)].map(mesh => {
+    mesh.userData.body.updateMatrix(); mesh.userData.arms[1].updateMatrix();
+    return [...mesh.userData.body.matrix.elements, ...mesh.userData.arms[1].matrix.elements];
+  });
+  const paused = pose(); view.render(0, 100);
+  assert.deepEqual(pose(), paused); assert.equal(game.player.execution.elapsed, 1.4);
+});
+
+test('spell kills become lethal immediately, animate a fall, and hand off to one persistent corpse', () => {
+  const game = new Game(LEVELS[0]), view = sceneView(game), guard = game.guards[0];
+  view.render(0, 0); const robe = view.entities.get(guard.id).userData.robeMaterial;
+  let released = false; robe.addEventListener('dispose', () => { released = true; });
+  game.killGuard(guard); view.render(0, 0);
+  assert.equal(game.guardAt(guard.x, guard.y), undefined); assert.equal(game.corpses.length, 1);
+  assert.equal(view.entities.has(`corpse-${guard.id}`), false); assert.equal(view.entities.has(guard.id), true);
+  game.time = DISPATCH_SECONDS / 2; view.render(0, 0.3);
+  assert.ok(view.entities.get(guard.id).userData.body.rotation.x < 0);
+  game.time = DISPATCH_SECONDS; view.render(0, 0.65);
+  assert.equal(view.entities.has(guard.id), false); assert.equal(released, true);
+  assert.equal(view.entities.has(`corpse-${guard.id}`), true);
+});
+
+test('auto-dispatched frozen victims dissolve without creating a corpse or revealing fog', () => {
+  const game = new Game(LEVELS[0]), view = sceneView(game), guard = game.guards[1];
+  guard.frozenUntil = 100; game.killGuard(guard, true);
+  game.time = DISPATCH_SECONDS * .7; view.render(0, 1);
+  const victim = view.entities.get(guard.id);
+  assert.equal(victim.visible, false); assert.ok(victim.userData.body.scale.x < .68);
+  assert.equal(game.corpses.length, 0);
+  game.time = DISPATCH_SECONDS; view.render(0, 2);
+  assert.equal(view.entities.has(guard.id), false); assert.equal(view.entities.has(`corpse-${guard.id}`), false);
+});
+
+test('corpse disposal kneels and burns, cancellation restores the body, and removal releases its materials', () => {
+  const game = new Game(LEVELS[0]), view = sceneView(game);
+  game.corpses.push({ id: 'burning-body', x: 9, y: 15 });
+  game.player.disposal = { corpseId: 'burning-body', elapsed: 1.8 }; view.render(0, 1);
+  const corpse = view.entities.get('burning-body'), player = view.entities.get('player');
+  assert.equal(corpse.userData.burn.visible, true); assert.ok(corpse.userData.body.scale.x < .68);
+  assert.ok(player.userData.body.position.y < 0);
+  assert.equal(game.move('east'), true); view.render(0, 2);
+  assert.equal(corpse.userData.burn.visible, false); assert.equal(corpse.userData.body.scale.x, .68);
+  const owned = [...corpse.userData.ownedMaterials]; let released = 0;
+  owned.forEach(material => material.addEventListener('dispose', () => released++));
+  game.corpses = []; view.render(0, 3);
+  assert.equal(released, owned.length); assert.ok(owned.every(material => !view.dynamicMaterials.has(material)));
+});
+
+test('boss combat has sword swings and a terminal collapse while gameplay remains stopped', () => {
+  const game = new Game(LEVELS[0]), view = sceneView(game);
+  game.mode = 'boss'; game.boss = { x: 9, y: 14, facing: 'south', state: 'alive', hp: 6,
+    frozenUntil: 0, cooldown: 1, damage: 1, speed: 1, motion: null, warning: null, immune: false };
+  game.refreshVision(); game.strike(); game.time = .1; view.render(0, .1);
+  assert.ok(view.entities.get('player').userData.arms[1].rotation.x > 1);
+  game.damageBoss(3); const stoppedTime = game.time; view.render(.3, .46);
+  const boss = view.entities.get('boss'); assert.ok(boss.userData.body.rotation.x < 0);
+  const pausedAngle = boss.userData.body.rotation.x; view.render(0, 20);
+  assert.equal(boss.userData.body.rotation.x, pausedAngle);
+  view.render(.5, 20.5); assert.equal(boss.userData.body.rotation.x, -Math.PI / 2);
+  assert.equal(game.state, 'won'); assert.equal(game.time, stoppedTime); assert.equal(boss.userData.ring.visible, false);
 });

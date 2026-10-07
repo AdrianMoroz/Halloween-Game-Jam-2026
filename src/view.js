@@ -2,7 +2,8 @@ import * as THREE from '../vendor/three.module.js';
 import { actorPosition, key } from './grid.js';
 import { SKILL_BY_ID } from './content.js';
 import { TacticalCamera } from './camera.js';
-import { surfaceTexture, copingGeometry, characterModel, animateCharacter } from './art.js';
+import { DISPATCH_SECONDS } from './game.js';
+import { surfaceTexture, copingGeometry, characterModel, corpseModel, animateCharacter, animateCorpse } from './art.js';
 
 const COLORS = { stone: 0x253f3c, wall: 0x46544e, gold: 0xcaaa70,
   yin: 0xae91e7, guard: 0xddc28b, alarm: 0xed7b65, frost: 0x83d4ee };
@@ -86,7 +87,7 @@ export class GameView {
     for (const material of this.dynamicMaterials) material.dispose();
     this.dynamicMaterials.clear(); this.entities.clear(); this.flashes = [];
     if (this.sealTexture) { this.sealTexture.dispose(); this.sealTexture = null; }
-    this.game = game; this.demo = preview; this.revision = -1; this.previewSkill = null;
+    this.game = game; this.demo = preview; this.revision = -1; this.previewSkill = null; this.terminalTime = 0;
     this.cameraRig.setGame(game, preview);
     this.world = new THREE.Group(); this.scene.add(this.world);
     const { width, height } = game.grid, count = width * height;
@@ -212,12 +213,7 @@ export class GameView {
   }
 
   makeCorpse() {
-    const group = characterModel(this, 'guard'), { body, ring, pointer, arms, legs } = group.userData;
-    group.remove(ring, pointer);
-    body.scale.setScalar(0.68); body.rotation.set(Math.PI / 2, 0, -0.25);
-    body.position.set(0, 0.16, -0.45);
-    arms[0].rotation.z = 0.40; arms[1].rotation.z = -0.65;
-    legs[0].rotation.z = 0.12; legs[1].rotation.z = -0.18;
+    const group = corpseModel(this);
     this.world.add(group); return group;
   }
 
@@ -267,33 +263,47 @@ export class GameView {
   render(dt, elapsed) {
     const game = this.game;
     if (!game) return;
+    // Finish terminal falls behind the ending overlay, without advancing rules.
+    this.terminalTime = game.state === 'playing' ? 0 : this.terminalTime + Math.max(0, dt);
+    const animationTime = game.time + this.terminalTime;
     if (this.revision !== game.visibilityRevision) this.refreshMap();
     const aliveKeys = new Set();
     const syncActor = (id, actor, kind) => {
       aliveKeys.add(id);
       let mesh = this.entities.get(id);
       if (!mesh) { mesh = this.makeActor(kind); this.entities.set(id, mesh); }
-      const position = actorPosition(actor);
+      let position = actorPosition(actor);
+      if (actor.death?.position && actor.death.method !== 'execution') {
+        const p = Math.min(1, Math.max(0, (animationTime - actor.death.startedAt) / DISPATCH_SECONDS));
+        position = { x: actor.death.position.x + (actor.x - actor.death.position.x) * p,
+          y: actor.death.position.y + (actor.y - actor.death.position.y) * p };
+      }
       const fogVisible = Boolean(this.demo || game.visible.has(key(actor.x, actor.y)) ||
         actor.motion && game.visible.has(key(actor.motion.to.x, actor.motion.to.y)));
       mesh.visible = kind === 'player' || fogVisible;
-      mesh.position.copy(this.position(position.x, position.y)); mesh.rotation.y = facingAngle(actor.facing);
-      animateCharacter(mesh, actor, elapsed, game.time);
+      const execution = actor.id === game.player.execution?.guardId ? game.player.execution : null;
+      mesh.position.copy(this.position(position.x, position.y));
+      mesh.rotation.y = facingAngle(actor.death?.facing || (execution ? game.player.facing : actor.facing));
+      animateCharacter(mesh, actor, elapsed, animationTime, { execution });
       const color = actor.frozenUntil > game.time ? COLORS.frost : actor.state === 'flee' ? COLORS.alarm : actor.immune ? 0xf7ce86 : mesh.userData.baseColor;
       mesh.userData.robeMaterial.color.set(color);
       mesh.userData.ring.scale.setScalar(kind === 'player' ? 1 + Math.sin(elapsed * 3) * 0.055 : 1);
-      if (kind === 'player') mesh.visible = actor.hp > 0 || Math.sin(elapsed * 12) > 0;
       if (kind === 'player' && actor.damageCooldown > 0) mesh.userData.robeMaterial.emissive.set(0xaa3333);
+      else if (actor.death?.autoDispose) mesh.userData.robeMaterial.emissive.set(0x317e5e);
       else mesh.userData.robeMaterial.emissive.set(kind === 'player' ? 0x161022 : actor.immune ? 0x8d6020 : 0x000000);
     };
     syncActor('player', game.player, 'player');
-    for (const guard of game.guards) if (guard.state !== 'dead') syncActor(guard.id, guard, 'guard');
+    for (const guard of game.guards) if (guard.state !== 'dead' || guard.death && guard.death.method !== 'execution' &&
+      animationTime < guard.death.startedAt + DISPATCH_SECONDS) syncActor(guard.id, guard, 'guard');
     for (const enemy of game.horde) syncActor(enemy.id, enemy, 'horde');
-    if (game.boss?.state === 'alive') syncActor('boss', game.boss, 'boss');
+    if (game.boss) syncActor('boss', game.boss, 'boss');
     for (const corpse of game.corpses) {
+      if (animationTime < (corpse.settlesAt || 0)) continue;
       aliveKeys.add(corpse.id); let mesh = this.entities.get(corpse.id);
       if (!mesh) { mesh = this.makeCorpse(); this.entities.set(corpse.id, mesh); }
-      mesh.position.copy(this.position(corpse.x, corpse.y)); mesh.visible = this.demo || game.visible.has(key(corpse.x, corpse.y));
+      mesh.position.copy(this.position(corpse.x, corpse.y)); mesh.rotation.y = facingAngle(corpse.facing || 'north');
+      mesh.visible = this.demo || game.visible.has(key(corpse.x, corpse.y));
+      animateCorpse(mesh, game.player.disposal?.corpseId === corpse.id ? game.player.disposal : null, animationTime);
     }
     for (const effect of game.effects) {
       aliveKeys.add(effect.id); let mesh = this.entities.get(effect.id);
@@ -302,7 +312,9 @@ export class GameView {
     }
     for (const [id, mesh] of this.entities) if (!aliveKeys.has(id)) {
       this.world.remove(mesh);
-      if (mesh.userData.robeMaterial) { mesh.userData.robeMaterial.dispose(); this.dynamicMaterials.delete(mesh.userData.robeMaterial); }
+      for (const material of mesh.userData.ownedMaterials || []) {
+        material.dispose(); this.dynamicMaterials.delete(material);
+      }
       if (id.startsWith('effect-')) mesh.traverse(object => {
         if (object.material && this.dynamicMaterials.has(object.material)) {
           object.material.dispose(); this.dynamicMaterials.delete(object.material);

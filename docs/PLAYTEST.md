@@ -21,6 +21,8 @@ The creation environment allowed simulation, application-flow, audio-controller 
 - Refresh and confirm sound preferences persist independently of the campaign.
 - Check Chrome/Edge, Firefox, and the intended mobile browser. Voice lists may arrive late or differ by device. Confirm the written story and game still work with speech disabled or unavailable.
 - Listen through several repetitions of all three tracks for clipping, loop gaps, and a comfortable balance against narration.
+- With a real narration MP3 configured, confirm it replaces the intended cue, displays matching text, lowers music, and respects voice volume, mute, Skip, and Replay. Confirm that pausing resumes at the paused audio position and leaving a scene cancels the clip.
+- Configure individual passage clips with a missing entry. Confirm the unrecorded passage uses browser speech in the correct order. Temporarily rename a recording and confirm a missing-file fallback preserves the written story and controls.
 
 ## First courtyard
 
@@ -28,7 +30,9 @@ The creation environment allowed simulation, application-flow, audio-controller 
 - Move with WASD and arrows. Hold Shift + direction and confirm facing changes without movement.
 - Confirm unseen tiles are black, walls occlude sight, and guards outside vision are hidden.
 - Approach a guard from the rear. Confirm movement and casts lock for 2.5 seconds and a corpse appears afterward.
+- Watch the grab, sword wind-up, strike, and fall from all four approach directions. Player and victim should be separate, and the lying corpse should keep the victim's final orientation. Pause during the strike and confirm the pose holds until resuming.
 - Stand still for two seconds to burn the corpse. Move away halfway through and confirm the timer resets.
+- Confirm the disposal pose kneels, spectral flames rise, and the corpse shrinks near completion. Cancel disposal and confirm the intact body remains. Spell kills should fall or dissolve without delaying their gameplay effect; fog must hide these animations normally.
 - Let another guard see a corpse. Confirm they flee and can be intercepted.
 
 ## Spells and horde
@@ -46,6 +50,7 @@ The creation environment allowed simulation, application-flow, audio-controller 
 - Restart a failed attempt and confirm kills / points are not duplicated.
 - Refresh the page and use Continue: completed levels and purchased upgrades persist; the current attempt restarts at entry.
 - Finish an ordinary branch. Confirm Space attacks, spell damage, red attack warnings, and victory.
+- Inspect the sword swing on Space, the boss's warning wind-up and attack, and the final fall behind the victory or game-over screen. Terminal animation must not cause additional gameplay updates or damage.
 - Finish a run with 17 or 18 of the 18 disciples killed. Confirm the unique dialogue, IMMORTAL status, unchanged boss HP under attacks, and the nightmare retry flow.
 
 ## Presentation and performance

@@ -30,7 +30,7 @@ function updateSoundControls() {
   $('narration-volume-value').textContent = `${Math.round(settings.narrationVolume * 100)}%`;
   $('narration-enabled').checked = settings.narrationEnabled;
   $('narration-enabled').disabled = !audio.supportsNarration;
-  $('test-voice').disabled = !audio.supportsNarration || settings.muted || !settings.narrationEnabled;
+  $('test-voice').disabled = !audio.supportsSpeech || settings.muted || !settings.narrationEnabled;
   $('mute-all').textContent = settings.muted ? 'Unmute all' : 'Mute all';
   const voices = audio.englishVoices(), signature = voices.map(voice => voice.voiceURI).join('|');
   if (signature !== voiceSignature) {
@@ -38,8 +38,11 @@ function updateSoundControls() {
     $('voice-select').innerHTML = '<option value="">Automatic English voice</option>' + voices.map(voice => `<option value="${escapeText(voice.voiceURI)}">${escapeText(voice.name)} · ${escapeText(voice.lang)}</option>`).join('');
   }
   $('voice-select').value = settings.voiceURI;
-  $('voice-select').disabled = !audio.supportsNarration || !voices.length;
-  $('audio-status').textContent = audio.error || (audio.supportsNarration ? 'Narration uses your browser’s available voices. Story text remains on screen.' : 'Voice playback is unavailable in this browser. The written story remains available.');
+  $('voice-select').disabled = !audio.supportsSpeech || !voices.length;
+  $('audio-status').textContent = audio.error || (audio.hasRecordings ?
+    'Recorded narration plays where provided. Other passages use available browser voices. Story text remains on screen.' :
+    audio.supportsNarration ? 'Narration uses your browser’s available voices. Story text remains on screen.' :
+    'Voice playback is unavailable in this browser. The written story remains available.');
 }
 function closeSoundSettings(restoreFocus = false) {
   settingsOpen = false; $('sound-settings').hidden = true; $('sound-button').setAttribute('aria-expanded', 'false');
@@ -212,7 +215,7 @@ function revelation() {
     { text: 'He severs his mortal tethers.', role: 'narrator' },
   ] : [{ text: 'The grandmaster rises. Behind him, the battered sect still lives. He draws his sword.', role: 'narrator' }];
   audio.narrate([{ text: REVELATION[0], role: 'narrator' }, { text: REVELATION[1], role: 'grandmaster' },
-    { text: REVELATION[2], role: 'narrator' }, ...branch], { key: 'revelation' });
+    { text: REVELATION[2], role: 'narrator' }, ...branch], { key: immune ? 'revelation-immortal' : 'revelation' });
 }
 
 function pause() {
@@ -232,7 +235,7 @@ function death(nightmare) {
   panel('death', `<section class="panel compact-panel ${nightmare ? 'nightmare' : ''}"><span class="eyebrow">${nightmare ? 'AN ENDLESS NIGHTMARE' : 'THE ASCENT ENDS'}</span><h2>${nightmare ? 'His wrath<br>cannot die.' : 'Darkness<br>takes you.'}</h2><p>${nightmare ? 'You extinguished his lineage. He extinguished his mortality. The Yin Ghost General meets the same unkillable fury, again and again.' : 'Your body falls before the summit. The mountain keeps its secret a little longer.'}</p><div class="stack-actions"><button id="retry" class="primary">${nightmare ? 'Enter the nightmare again' : 'Restart this level'}</button><button id="death-menu" class="text-button">Return to title</button></div><span class="subtle">This attempt’s kills and points are reset.</span></section>`);
   $('retry').onclick = startLevel; $('death-menu').onclick = title;
   audio.narrate(nightmare ? 'You extinguished his lineage. He extinguished his mortality. The Yin Ghost General meets the same unkillable fury, again and again.' :
-    'Your body falls before the summit. The mountain keeps its secret a little longer.', { key: 'death' });
+    'Your body falls before the summit. The mountain keeps its secret a little longer.', { key: nightmare ? 'death-immortal' : 'death' });
 }
 
 function victory() {
@@ -287,7 +290,7 @@ function handleEvents() {
     if (event.type === 'notice') notice(event.text);
     if (event.type === 'whisper') {
       $('whisper').textContent = event.text; $('whisper').hidden = false; whisperUntil = performance.now() + 8500;
-      audio.narrate(event.text, { role: /^[“"']/.test(event.text) ? 'disciple' : 'narrator', key: 'whisper' });
+      audio.narrate(event.text, { role: /^[“"']/.test(event.text) ? 'disciple' : 'narrator', key: `whisper-${game.level.id}-${event.index + 1}` });
     }
     if (event.type === 'bossAttack') view.flash(event.tiles, 0xee745e);
     if (event.type === 'complete') { const result = commitLevel(run, game); if (result) { saveRun(); transition(result); } }
@@ -358,7 +361,7 @@ function frame(now) {
     if (now > toastUntil) $('toast').hidden = true;
     if (now > whisperUntil) $('whisper').hidden = true;
   } else accumulator = 0;
-  view?.render(dt, now / 1000); requestAnimationFrame(frame);
+  view?.render(settingsOpen || screen === 'pause' || screen === 'help' ? 0 : dt, now / 1000); requestAnimationFrame(frame);
 }
 
 try {

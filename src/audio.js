@@ -1,4 +1,6 @@
-// Browser-only playback. Music is bundled; narration uses the device's voices.
+import { NARRATION_CLIPS } from './narration.js';
+
+// Browser-only playback. Recorded narration is optional alongside device voices.
 export const MUSIC_TRACKS = {
   stealth: new URL('../assets/music/stealth.mp3', import.meta.url).href,
   horde: new URL('../assets/music/horde.mp3', import.meta.url).href,
@@ -45,8 +47,9 @@ export function speechChunks(text, limit = 180) {
 }
 
 export class AudioManager {
-  constructor({ host = globalThis, storage, onNarration = () => {}, onStatus = () => {} } = {}) {
+  constructor({ host = globalThis, storage, recordings = NARRATION_CLIPS, onNarration = () => {}, onStatus = () => {} } = {}) {
     this.host = host; this.onNarration = onNarration; this.onStatus = onStatus;
+    this.recordings = recordings && typeof recordings === 'object' ? recordings : {};
     try { this.storage = storage ?? host.localStorage; } catch { this.storage = null; }
     let saved;
     try { saved = JSON.parse(this.storage?.getItem(SOUND_SETTINGS_KEY) ?? 'null'); } catch { saved = null; }
@@ -60,13 +63,19 @@ export class AudioManager {
     this.buffers = new Map(); this.desiredMusic = 'stealth'; this.musicRequest = 0;
     this.unlocked = false; this.paused = false; this.disposed = false; this.error = '';
     this.speaking = false; this.queue = []; this.index = 0; this.token = 0; this.utterance = null;
+    this.recordingBuffers = new Map(); this.recording = null; this.recordingOffset = 0;
     this.lastCue = null; this.timers = []; this.voiceList = [];
     this.voiceListener = () => { this.refreshVoices(); this.notify(); };
     this.speech?.addEventListener?.('voiceschanged', this.voiceListener);
     this.refreshVoices();
   }
 
-  get supportsNarration() { return Boolean(this.speech && this.Utterance); }
+  get supportsSpeech() { return Boolean(this.speech && this.Utterance); }
+  get hasRecordings() {
+    return Object.values(this.recordings).some(value => (Array.isArray(value) ? value : [value])
+      .some(url => typeof url === 'string' && url.length > 0));
+  }
+  get supportsNarration() { return this.supportsSpeech || this.supportsMusic && this.hasRecordings; }
   get supportsMusic() { return Boolean(this.Context && this.fetcher); }
   refreshVoices() {
     try { this.voiceList = this.speech?.getVoices?.() ?? []; } catch { this.voiceList = []; }
@@ -120,6 +129,7 @@ export class AudioManager {
   setNarrationVolume(value) {
     this.settings.narrationVolume = clamp(value, .9);
     if (this.utterance) this.utterance.volume = this.settings.narrationVolume;
+    this.ramp(this.recording?.gain.gain, this.settings.narrationVolume, .08);
     if (this.settings.narrationVolume === 0) this.stopNarration();
     this.persist();
   }
@@ -182,8 +192,19 @@ export class AudioManager {
   }
 
   clearSpeechTimers() { for (const timer of this.timers) this.clearTimer(timer); this.timers = []; }
-  cancelCurrent() {
+  releaseRecording() {
+    if (!this.recording) return;
+    const { source, gain } = this.recording; this.recording = null;
+    source.onended = null;
+    try { source.stop(); } catch { /* A finished clip may already have stopped. */ }
+    source.disconnect(); gain.disconnect();
+  }
+  cancelCurrent({ preserveRecording = false } = {}) {
+    if (preserveRecording && this.recording) {
+      this.recordingOffset = this.recording.offset + Math.max(0, this.context.currentTime - this.recording.startedAt);
+    } else if (!preserveRecording) this.recordingOffset = 0;
     this.token++; this.clearSpeechTimers(); this.utterance = null;
+    this.releaseRecording();
     try { this.speech?.cancel(); } catch { /* Text remains available. */ }
     this.speaking = false; this.onNarration(null); this.applyMusicVolume();
   }
@@ -197,11 +218,18 @@ export class AudioManager {
     const list = Array.isArray(lines) ? lines : [lines];
     this.stopNarration();
     this.lastCue = { lines: list.map(line => typeof line === 'string' ? line : { ...line }), role, key };
-    this.queue = list.flatMap(line => {
-      const text = typeof line === 'string' ? line : line?.text ?? '';
-      const speaker = typeof line === 'string' ? role : line?.role ?? role;
-      return speechChunks(text).map(chunk => ({ text: chunk, role: speaker in VOICE_ROLES ? speaker : 'narrator' }));
-    });
+    const clips = this.recordings[key];
+    const entry = (text, speaker, recording) => ({ text, role: speaker in VOICE_ROLES ? speaker : 'narrator',
+      ...(typeof recording === 'string' && recording ? { recording } : {}) });
+    this.queue = typeof clips === 'string' && clips ?
+      [entry(list.map(line => typeof line === 'string' ? line : line?.text ?? '').join(' '), role, clips)] :
+      list.flatMap((line, index) => {
+        const text = typeof line === 'string' ? line : line?.text ?? '';
+        const speaker = typeof line === 'string' ? role : line?.role ?? role;
+        const recording = Array.isArray(clips) ? clips[index] : null;
+        return typeof recording === 'string' && recording ? [entry(text, speaker, recording)] :
+          speechChunks(text).map(chunk => entry(chunk, speaker));
+      });
     this.index = 0;
     return this.speakNext();
   }
@@ -216,9 +244,17 @@ export class AudioManager {
       this.settings.muted || !this.settings.narrationEnabled || this.settings.narrationVolume === 0) {
       this.speaking = false; this.onNarration(null); this.applyMusicVolume(); this.notify(); return false;
     }
+    // Recorded scenes still work on devices with no speech synthesis API.
+    while (!this.supportsSpeech && this.queue[this.index] && !this.queue[this.index].recording) this.index++;
     const line = this.queue[this.index];
     if (!line) { this.speaking = false; this.onNarration(null); this.applyMusicVolume(); this.notify(); return false; }
     this.clearSpeechTimers();
+    if (line.recording && this.context && this.fetcher) {
+      this.speaking = true;
+      this.onNarration({ ...line, label: VOICE_ROLES[line.role].label }); this.applyMusicVolume(); this.notify();
+      this.playRecording(line, this.token); return true;
+    }
+    if (line.recording) return this.fallbackRecording(line);
     const token = this.token, utterance = new this.Utterance(line.text), profile = VOICE_ROLES[line.role];
     const voice = this.selectedVoice();
     if (voice) utterance.voice = voice;
@@ -247,12 +283,53 @@ export class AudioManager {
     return true;
   }
 
+  async recordingBuffer(url) {
+    if (!this.recordingBuffers.has(url)) {
+      const loading = (async () => {
+        const response = await this.fetcher(url);
+        if (!response.ok) throw Error('Unable to load narration.');
+        return await this.context.decodeAudioData(await response.arrayBuffer());
+      })();
+      this.recordingBuffers.set(url, loading);
+      loading.catch(() => { if (this.recordingBuffers.get(url) === loading) this.recordingBuffers.delete(url); });
+    }
+    return await this.recordingBuffers.get(url);
+  }
+  fallbackRecording(line) {
+    this.clearSpeechTimers(); this.releaseRecording(); this.recordingOffset = 0;
+    this.recordingBuffers.delete(line.recording);
+    this.error = 'A narration recording could not load. Available browser voices will read the written text.';
+    const fallback = speechChunks(line.text).map(text => ({ text, role: line.role }));
+    this.queue.splice(this.index, 1, ...fallback);
+    return this.speakNext();
+  }
+  async playRecording(line, token) {
+    const current = () => this.token === token && this.queue[this.index] === line && !this.paused && !this.disposed;
+    const timeout = this.timer(() => { if (current()) this.fallbackRecording(line); }, 8000);
+    timeout?.unref?.(); this.timers.push(timeout);
+    try {
+      const buffer = await this.recordingBuffer(line.recording);
+      if (!current()) return;
+      this.clearSpeechTimers();
+      const offset = Math.min(this.recordingOffset, buffer.duration);
+      if (offset >= buffer.duration) { this.recordingOffset = 0; this.index++; this.speakNext(); return; }
+      const source = this.context.createBufferSource(), gain = this.context.createGain();
+      source.buffer = buffer; source.loop = false; gain.gain.value = this.settings.narrationVolume;
+      source.connect(gain); gain.connect(this.context.destination);
+      this.recording = { source, gain, offset, startedAt: this.context.currentTime };
+      source.onended = () => {
+        if (!current() || this.recording?.source !== source) return;
+        this.releaseRecording(); this.recordingOffset = 0; this.index++; this.speakNext();
+      };
+      source.start(0, offset); this.error = ''; this.notify();
+    } catch { if (current()) this.fallbackRecording(line); }
+  }
+
   pause() {
     if (this.paused || this.disposed) return;
     this.paused = true;
-    // Cancel rather than depending on inconsistent speech pause implementations.
-    // Keep the queue/index; resume repeats only the interrupted short chunk.
-    this.cancelCurrent();
+    // Speech resumes at its short chunk; recordings resume at the exact offset.
+    this.cancelCurrent({ preserveRecording: true });
     try { Promise.resolve(this.context?.suspend()).catch(() => {}); } catch { /* Audio is optional. */ }
     this.notify();
   }
