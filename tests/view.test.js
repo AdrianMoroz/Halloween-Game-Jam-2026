@@ -4,10 +4,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { GameView, THREE } from '../src/view.js';
 import { Game } from '../src/game.js';
-import { LEVELS, DEFAULT_STATS, DEFAULT_LOADOUT } from '../src/content.js';
+import { LEVELS, DEFAULT_STATS, DEFAULT_LOADOUT, HORDE_TYPES } from '../src/content.js';
 import { TacticalCamera } from '../src/camera.js';
 import { EXECUTION_SECONDS, DISPATCH_SECONDS } from '../src/game.js';
-import { DEATH_CUTSCENE_SECONDS } from '../src/cutscene.js';
 
 function sceneView(game) {
   const view = Object.create(GameView.prototype);
@@ -76,7 +75,7 @@ test('detailed characters reuse geometry, articulate their limbs, and release co
   const secondTorso = second.userData.body.children.find(mesh => mesh.isMesh && mesh.material === second.userData.robeMaterial);
   assert.equal(firstTorso.geometry, secondTorso.geometry);
   assert.notEqual(first.userData.robeMaterial, second.userData.robeMaterial);
-  game.move('north'); view.render(.016, 1.1);
+  game.move('north'); game.update(.05); view.render(.016, 1.1);
   const player = view.entities.get('player');
   assert.notEqual(player.userData.legs[0].rotation.x, 0);
   assert.equal(player.userData.legs[0].rotation.x, -player.userData.legs[1].rotation.x);
@@ -191,38 +190,59 @@ test('boss combat has sword swings and a terminal collapse while gameplay remain
   assert.equal(game.state, 'won'); assert.equal(game.time, stoppedTime); assert.equal(boss.userData.ring.visible, false);
 });
 
-test('the death cutscene pairs the real killer with a slow collapse while freezing gameplay and other actors', () => {
+test('a mixed horde has distinct weapons and colors while reusing geometry for each archetype', () => {
   const game = new Game(LEVELS[0]), view = sceneView(game); game.triggerHorde();
-  const killer = { id: 'killer', tag: 'HordeEnemy', x: game.player.x, y: game.player.y, facing: 'south', motion: null };
-  game.horde.push(killer); game.startStep(game.guards[0], { x: 6, y: 5 }, 1);
-  view.render(0, 1); const geometryCount = view.geometries.size;
-  game.damagePlayer(1, killer); view.startDeathCutscene(); const snapshot = JSON.stringify(game);
-  view.render(.4, 1.4);
-  const player = view.entities.get('player'), attacker = view.entities.get('killer'), guard = view.entities.get(game.guards[0].id);
-  assert.equal(attacker.userData.trail.visible, true); assert.ok(player.userData.body.rotation.x > 0);
-  assert.ok(player.position.distanceTo(attacker.position) > .9);
-  const backgroundPose = [...guard.userData.body.position.toArray(), ...guard.userData.body.rotation.toArray()];
-  view.render(.8, 2.2); assert.ok(player.userData.body.position.y < -.2);
-  const angle = player.userData.body.rotation.x, camera = view.camera.matrixWorld.clone();
-  view.render(0, 100); assert.equal(player.userData.body.rotation.x, angle);
-  assert.deepEqual(view.camera.matrixWorld.elements, camera.elements);
-  assert.deepEqual([...guard.userData.body.position.toArray(), ...guard.userData.body.rotation.toArray()], backgroundPose);
-  view.render(3.4, 103.4);
-  assert.equal(view.deathCutscene.finished, true); assert.equal(view.deathCutscene.elapsed, DEATH_CUTSCENE_SECONDS);
-  assert.equal(player.userData.body.rotation.x, -Math.PI / 2); assert.equal(attacker.userData.trail.visible, false);
-  assert.equal(player.userData.body.scale.x, 1);
-  assert.equal(view.cones.count, 0); assert.equal(view.targets.count, 0); assert.equal(view.danger.count, 0);
-  assert.equal(JSON.stringify(game), snapshot); assert.equal(view.geometries.size, geometryCount);
+  const types = Object.keys(HORDE_TYPES);
+  const enemy = index => ({ id: `mixed-${index}`, x: 1 + index % 17, y: 1 + Math.floor(index / 17),
+    facing: 'south', motion: null, archetype: types[index % 4], appearance: HORDE_TYPES[types[index % 4]].appearance });
+  for (let index = 0; index < 4; index++) game.horde.push(enemy(index));
+  view.render(0, 0); const geometryCount = view.geometries.size;
+  const actors = game.horde.map(e => view.entities.get(e.id));
+  assert.equal(new Set(actors.map(mesh => mesh.userData.robeMaterial.color.getHex())).size, 4);
+  assert.equal(new Set(actors.map(mesh => mesh.userData.kind)).size, 4);
+  assert.ok(actors[3].scale.x > actors[1].scale.x);
+  const weaponBounds = actors.map(mesh => new THREE.Box3().setFromObject(mesh.userData.arms[1]));
+  assert.ok(weaponBounds[2].getSize(new THREE.Vector3()).z > weaponBounds[1].getSize(new THREE.Vector3()).z * 1.5);
+  for (let index = 4; index < 70; index++) game.horde.push(enemy(index));
+  view.render(0, 0);
+  assert.equal(view.geometries.size, geometryCount); assert.equal(view.entities.size, 75);
 });
 
-test('skipping a death cutscene settles the pose and restarting clears its camera and resources', () => {
-  const game = new Game(LEVELS[0]), view = sceneView(game); game.damagePlayer();
-  view.startDeathCutscene(); view.finishDeathCutscene(); view.render(0, 0);
-  const player = view.entities.get('player'); assert.equal(player.userData.body.rotation.x, -Math.PI / 2);
-  assert.equal(view.deathCutscene.frame.fade, 1);
-  const material = player.userData.robeMaterial; let disposed = false;
-  material.addEventListener('dispose', () => { disposed = true; });
+test('all reinforcement danger tiles render, including more than the old 32-tile limit, and pause holds the pulse', () => {
+  const game = new Game(LEVELS[0]), view = sceneView(game); game.triggerHorde();
+  for (let index = 0; index < 40; index++) game.horde.push({ id: `warn-${index}`, x: 1 + index % 17,
+    y: 1 + Math.floor(index / 17), facing: 'south', motion: null,
+    warning: { remaining: .4, duration: .8, tiles: [{ x: 1 + index % 17, y: 1 + Math.floor(index / 17) }] } });
+  game.time = .4; view.render(0, .4);
+  assert.equal(view.danger.count, 40); const opacity = view.danger.material.opacity;
+  const arm = view.entities.get('warn-0').userData.arms[1].rotation.toArray();
+  view.render(0, 100);
+  assert.equal(view.danger.material.opacity, opacity);
+  assert.deepEqual(view.entities.get('warn-0').userData.arms[1].rotation.toArray(), arm);
+});
+
+test('channeling shows a stationary raised-arm pose and the committed target pattern, then clears on interruption', () => {
+  const game = new Game(LEVELS[0], { ...DEFAULT_STATS, maxHP: 2 }, ['flame', 'eclipse', 'frost', 'miasma']);
+  const view = sceneView(game); view.previewSkill = 'bone';
+  game.cast(0); game.update(.3); view.render(0, .3);
+  const player = view.entities.get('player'), aura = player.userData.channelAura;
+  assert.equal(aura.visible, true); assert.equal(view.targets.count, 6);
+  assert.ok(player.userData.arms[0].rotation.x > 1);
+  const opacity = aura.material.opacity, scale = aura.scale.toArray(); view.render(0, 100);
+  assert.equal(aura.material.opacity, opacity); assert.deepEqual(aura.scale.toArray(), scale);
+  game.damagePlayer(); view.previewSkill = null; view.render(0, 100);
+  assert.equal(aura.visible, false); assert.equal(view.targets.count, 0);
+  let disposed = false; aura.material.addEventListener('dispose', () => { disposed = true; });
+  view.setGame(new Game(LEVELS[1])); assert.equal(disposed, true);
+});
+
+test('fatal damage uses the ordinary collapse and tactical camera while gameplay remains stopped', () => {
+  const game = new Game(LEVELS[0]), view = sceneView(game); view.render(0, 0);
+  const cameraPosition = view.camera.position.clone(); game.damagePlayer(); const stoppedTime = game.time;
+  view.render(.3, .3); assert.ok(view.entities.get('player').userData.body.rotation.x < 0);
+  assert.deepEqual(view.camera.position.toArray(), cameraPosition.toArray());
+  view.render(.5, .8); assert.equal(view.entities.get('player').userData.body.rotation.x, -Math.PI / 2);
+  assert.equal(game.time, stoppedTime); assert.equal(view.startDeathCutscene, undefined);
   view.setGame(new Game(LEVELS[0])); view.render(0, 0);
-  assert.equal(disposed, true); assert.equal(view.deathCutscene, null); assert.equal(view.cameraRig.deathShot, null);
   assert.equal(view.entities.get('player').userData.body.rotation.x, 0);
 });

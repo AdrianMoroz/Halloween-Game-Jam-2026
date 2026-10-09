@@ -27,11 +27,11 @@ export class Grid {
 }
 
 // Breadth-first search on the movement graph, including temporary spell walls.
-export function shortestPath(grid, start, goal, blocked = () => false) {
-  return shortestPathToAny(grid, start, [goal], blocked);
+export function shortestPath(grid, start, goal, blocked = () => false, neighborOrder = NEIGHBORS) {
+  return shortestPathToAny(grid, start, [goal], blocked, neighborOrder);
 }
 
-export function shortestPathToAny(grid, start, goals, blocked = () => false) {
+export function shortestPathToAny(grid, start, goals, blocked = () => false, neighborOrder = NEIGHBORS) {
   const targetKeys = new Set(goals.filter(p => !grid.isWall(p.x, p.y) && !blocked(p.x, p.y))
     .map(p => key(p.x, p.y)));
   if (!targetKeys.size) return null;
@@ -49,7 +49,7 @@ export function shortestPathToAny(grid, start, goals, blocked = () => false) {
       }
       return path.reverse();
     }
-    for (const d of NEIGHBORS) {
+    for (const d of neighborOrder) {
       const next = { x: current.x + d.x, y: current.y + d.y }, nextKey = key(next.x, next.y);
       if (parents.has(nextKey) || grid.isWall(next.x, next.y) || blocked(next.x, next.y)) continue;
       parents.set(nextKey, currentKey); queue.push(next);

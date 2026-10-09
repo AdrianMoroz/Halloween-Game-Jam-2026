@@ -164,18 +164,6 @@ body[data-screen="game"] .sound-settings, body[data-screen="pause"] .sound-setti
 .voice-caption p { margin-top: 6px; color: #d1d3c4; font: italic 15px/1.7 Georgia, serif; }
 body[data-speaking="true"] #whisper { display: none; }
 body:has(.boss-hud:not([hidden])) .voice-caption { top: 183px; }
-.death-cinematic { position: fixed; z-index: 6; inset: 0; pointer-events: none; background: radial-gradient(ellipse at center, transparent 35%, #05090dc4 100%); }
-.death-cinematic::before, .death-cinematic::after { content: ''; position: absolute; z-index: 1; left: 0; right: 0; height: clamp(48px, 9svh, 78px); background: #030609; }
-.death-cinematic::before { top: 0; }
-.death-cinematic::after { bottom: 0; }
-.cinematic-fade { position: absolute; inset: 0; background: #030609; opacity: 0; }
-.cinematic-title { position: absolute; z-index: 2; left: 16px; right: 16px; top: 70%; text-align: center; font: 18px/1.5 Georgia, serif; letter-spacing: .24em; color: #d3bfb2; opacity: 0; }
-.cinematic-skip { position: absolute; z-index: 2; right: max(18px, env(safe-area-inset-right)); bottom: max(12px, env(safe-area-inset-bottom)); pointer-events: auto; }
-.cinematic-skip kbd { margin-left: 8px; }
-body[data-screen="cutscene"] #stage { inset: 0; opacity: 1; }
-body[data-screen="cutscene"] .brand { display: none; }
-body[data-screen="cutscene"] .sound-controls { top: 14px; right: max(18px, env(safe-area-inset-right)); }
-body[data-screen="cutscene"] .sound-settings { top: 58px; }
 @media (max-width: 900px) {
   .panel { padding: 26px; }
   .skill-grid { grid-template-columns: repeat(3, 1fr); }

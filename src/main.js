@@ -10,7 +10,6 @@ const movementKeys = { KeyW: 'north', ArrowUp: 'north', KeyD: 'east', ArrowRight
 let run = freshRun(), game, view, screen = 'title', lastTime = performance.now(), accumulator = 0;
 let savedRun = null, held = new Map(), shiftHeld = false, toastUntil = 0, whisperUntil = 0, hudTime = 0;
 let settingsOpen = false, voiceSignature = '', currentVoiceCaption = null;
-let pendingDeath = null, windowFocused = true;
 const audio = new AudioManager({ onNarration: narrationCaption, onStatus: updateSoundControls });
 
 function narrationCaption(line) {
@@ -48,7 +47,7 @@ function updateSoundControls() {
 function closeSoundSettings(restoreFocus = false) {
   settingsOpen = false; $('sound-settings').hidden = true; $('sound-button').setAttribute('aria-expanded', 'false');
   held.clear(); shiftHeld = false; accumulator = 0;
-  if (restoreFocus) $(screen === 'game' ? 'scene' : screen === 'cutscene' ? 'skip-death-cutscene' : 'sound-button').focus({ preventScroll: true });
+  if (restoreFocus) $(screen === 'game' ? 'scene' : 'sound-button').focus({ preventScroll: true });
 }
 function toggleSoundSettings() {
   if (settingsOpen) { closeSoundSettings(true); return; }
@@ -70,13 +69,11 @@ function clearSave() { try { localStorage.removeItem(SAVE_KEY); } catch { /* Opt
 function layout(nextScreen) {
   const wasPaused = screen === 'pause' || screen === 'help';
   screen = nextScreen; document.body.dataset.screen = screen; held.clear(); shiftHeld = false;
-  $('death-cinematic').hidden = nextScreen !== 'cutscene';
-  if (nextScreen !== 'cutscene') pendingDeath = null;
   closeSoundSettings();
   if (nextScreen === 'pause' || nextScreen === 'help') audio.pause();
   else if (wasPaused && nextScreen === 'game') audio.resume();
   else { audio.stopNarration({ forget: true }); audio.resume(); }
-  const music = nextScreen === 'game' || nextScreen === 'pause' || nextScreen === 'help' || nextScreen === 'cutscene' ?
+  const music = nextScreen === 'game' || nextScreen === 'pause' || nextScreen === 'help' ?
     (game?.mode === 'horde' ? 'horde' : game?.boss ? 'boss' : 'stealth') :
     nextScreen === 'death' && game?.boss || nextScreen === 'story' && run.levelIndex >= LEVELS.length ? 'boss' : 'stealth';
   audio.setMusic(music); narrationCaption(currentVoiceCaption);
@@ -230,23 +227,8 @@ function resume() { layout('game'); $('overlay').hidden = true; accumulator = 0;
 
 function help() {
   if (screen !== 'game') return;
-  panel('help', `<section class="panel help-panel"><span class="eyebrow">THE WAY THROUGH</span><h2>Darkness has rules.</h2><div class="help-grid"><p><strong>Move & face</strong>WASD or arrows move one tile at a time. Hold Shift with a direction to face without moving.</p><p><strong>Camera</strong>The close overhead camera follows you. Press C or the camera button for a wide planning view. Fog and guard visibility stay the same.</p><p><strong>Cast</strong>Keys 1–4 cast equipped skills. Hover a skill to preview its pattern. All skills share a limited reserve.</p><p><strong>Execute</strong>Move onto a disciple from outside their sight. Execution locks movement and spells for 2.5 seconds.</p><p><strong>Dispose</strong>Stand still on a corpse for 2 seconds to burn it. Corpses inside another guard’s vision raise an alert.</p><p><strong>Intercept</strong>An alerted guard runs to the nearest reachable boundary. Stop every fleeing witness before they escape.</p><p><strong>Survive</strong>An escaped witness summons the horde. Fog lifts, spells lock, and the glowing exit remains your goal.</p>${game.boss ? '<p><strong>At the summit</strong>Space strikes one tile ahead. Red tiles warn of the grandmaster’s next attack. Soul strikes use no spell casts.</p>' : ''}</div><button id="help-close" class="primary">Return to the courtyard</button></section>`);
+  panel('help', `<section class="panel help-panel"><span class="eyebrow">THE WAY THROUGH</span><h2>Darkness has rules.</h2><div class="help-grid"><p><strong>Move & face</strong>WASD or arrows move one tile at a time. Hold Shift with a direction to face without moving.</p><p><strong>Camera</strong>The close overhead camera follows you. Press C or the camera button for a wide planning view. Fog and guard visibility stay the same.</p><p><strong>Cast</strong>Keys 1–4 cast equipped skills. Hover a skill to preview its pattern. All skills share a limited reserve. Flame holds you still for 0.7 seconds; Eclipse takes 1 second. Damage interrupts these casts and spends their reserve.</p><p><strong>Execute</strong>Move onto a disciple from outside their sight. Execution locks movement and spells for 2.5 seconds.</p><p><strong>Dispose</strong>Stand still on a corpse for 2 seconds to burn it. Corpses inside another guard’s vision raise an alert.</p><p><strong>Intercept</strong>An alerted guard runs to the nearest reachable boundary. Stop every fleeing witness before they escape.</p><p><strong>Survive</strong>An escaped witness summons the horde. Fog lifts and spells lock. Dodge the marked red attack tiles: green runners lunge, blue lancers reach three tiles, and broad ochre brutes sweep for two damage. Reach the glowing exit.</p>${game.boss ? '<p><strong>At the summit</strong>Space strikes one tile ahead. Red tiles warn of the grandmaster’s next attack. Soul strikes use no spell casts.</p>' : ''}</div><button id="help-close" class="primary">Return to the courtyard</button></section>`);
   $('help-close').onclick = resume;
-}
-
-function beginDeathCutscene(nightmare) {
-  layout('cutscene'); pendingDeath = { nightmare };
-  $('overlay').hidden = true;
-  $('death-cinematic-title').textContent = nightmare ? 'AN ENDLESS NIGHTMARE' : 'THE ASCENT ENDS';
-  $('death-cinematic-title').style.opacity = '0'; $('death-fade').style.opacity = '0';
-  view.startDeathCutscene(Boolean(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches));
-  accumulator = 0; $('skip-death-cutscene').focus({ preventScroll: true });
-}
-
-function finishDeathCutscene() {
-  if (screen !== 'cutscene' || !pendingDeath) return;
-  const { nightmare } = pendingDeath;
-  view.finishDeathCutscene(); death(nightmare);
 }
 
 function death(nightmare) {
@@ -279,14 +261,17 @@ function updateHUD() {
   $('mode').textContent = game.isHidden() && mode !== 'horde' ? 'HIDDEN' : ({ stealth: 'UNSEEN', chase: 'WITNESS FLEEING', horde: 'HORDE MODE', boss: 'THE SHATTERED SEAL' })[mode];
   $('mode').className = `mode mode-${mode}`;
   $('objective').textContent = mode === 'chase' ? `Intercept ${fleeing} fleeing ${fleeing === 1 ? 'disciple' : 'disciples'} before the boundary.` : mode === 'horde' ? 'Spells sealed. Survive and reach the glowing gate.' : mode === 'boss' ? 'Face the grandmaster. Space strikes one tile ahead.' : 'Reach the glowing gate at the top of the courtyard.';
-  const action = game.player.execution || game.player.disposal;
+  const action = game.player.execution || game.player.casting || game.player.disposal;
   $('commitment').hidden = !action;
   if (action) {
-    const duration = game.player.execution ? action.duration : DISPOSAL_SECONDS;
-    $('commitment-label').textContent = `${game.player.execution ? 'EXECUTING · INPUTS LOCKED' : 'DISPOSING · STAY STILL'} · ${Math.max(0, duration - action.elapsed).toFixed(1)}s`;
+    const duration = game.player.execution || game.player.casting ? action.duration : DISPOSAL_SECONDS;
+    const label = game.player.execution ? 'EXECUTING · INPUTS LOCKED' : game.player.casting ?
+      `CHANNELING ${SKILL_BY_ID[action.skillId].short.toUpperCase()} · STAY STILL` : 'DISPOSING · STAY STILL';
+    $('commitment-label').textContent = `${label} · ${Math.max(0, duration - action.elapsed).toFixed(1)}s`;
     $('commitment-fill').style.width = `${Math.min(100, action.elapsed / duration * 100)}%`;
   }
-  for (const button of document.querySelectorAll('[data-slot]')) button.disabled = game.mode === 'horde' || game.castsLeft <= 0 || Boolean(game.player.execution) || game.state !== 'playing';
+  for (const button of document.querySelectorAll('[data-slot]')) button.disabled = game.mode === 'horde' || game.castsLeft <= 0 ||
+    Boolean(game.player.execution || game.player.casting || game.player.motion) || game.state !== 'playing';
   if (game.boss) {
     $('boss-health').style.width = `${game.boss.hp / game.boss.maxHP * 100}%`;
     $('boss-health-text').textContent = game.boss.immune ? 'IMMORTAL' : `${game.boss.hp} / ${game.boss.maxHP}`;
@@ -301,6 +286,7 @@ function handleEvents() {
     if (event.type === 'horde') { audio.setMusic('horde'); notice('THE ALARM HAS SOUNDED · Reach the exit. Stealth spells are sealed.', 6); }
     if (event.type === 'cast') view.flash(event.tiles, SKILL_BY_ID[event.skill].color);
     if (event.type === 'strike') view.flash(event.tiles, 0xd7b4ef);
+    if (event.type === 'hordeAttack' || event.type === 'bossAttack') view.flash(event.tiles, 0xee745e);
     if (event.type === 'kill') view.flash([event], event.autoDispose ? 0x84d7b3 : 0xb796d7);
     if (event.type === 'dispose') view.flash([event], 0x84d7b3);
     if (event.type === 'damage') view.shake = 0.16;
@@ -310,9 +296,8 @@ function handleEvents() {
       $('whisper').textContent = event.text; $('whisper').hidden = false; whisperUntil = performance.now() + 8500;
       audio.narrate(event.text, { role: /^[“"']/.test(event.text) ? 'disciple' : 'narrator', key: `whisper-${game.level.id}-${event.index + 1}` });
     }
-    if (event.type === 'bossAttack') view.flash(event.tiles, 0xee745e);
     if (event.type === 'complete') { const result = commitLevel(run, game); if (result) { saveRun(); transition(result); } }
-    if (event.type === 'death') beginDeathCutscene(event.nightmare);
+    if (event.type === 'death') { death(event.nightmare); updateHUD(); }
     if (event.type === 'victory') victory();
   }
 }
@@ -326,10 +311,6 @@ function input() {
 document.addEventListener('keydown', event => {
   const code = event.code;
   if (settingsOpen) { if (code === 'Escape') { event.preventDefault(); closeSoundSettings(true); } return; }
-  if (screen === 'cutscene') {
-    if (!event.repeat && (code === 'Space' || code === 'Escape')) { event.preventDefault(); finishDeathCutscene(); }
-    return;
-  }
   if (code === 'Space' && event.target?.tagName === 'BUTTON') return;
   if (movementKeys[code] && screen === 'game') { event.preventDefault(); if (!held.has(code)) held.set(code, movementKeys[code]); }
   if (code === 'ShiftLeft' || code === 'ShiftRight') shiftHeld = true;
@@ -346,8 +327,8 @@ document.addEventListener('keyup', event => {
   held.delete(event.code);
   if (event.code === 'ShiftLeft' || event.code === 'ShiftRight') shiftHeld = event.shiftKey;
 });
-window.addEventListener('blur', () => { windowFocused = false; held.clear(); if (screen === 'game') pause(); else audio.pause(); });
-window.addEventListener('focus', () => { windowFocused = true; if (!document.hidden && screen !== 'pause' && screen !== 'help') audio.resume(); });
+window.addEventListener('blur', () => { held.clear(); if (screen === 'game') pause(); else audio.pause(); });
+window.addEventListener('focus', () => { if (!document.hidden && screen !== 'pause' && screen !== 'help') audio.resume(); });
 window.addEventListener('pagehide', () => audio.pause());
 window.addEventListener('pageshow', () => { if (!document.hidden && screen !== 'pause' && screen !== 'help') audio.resume(); });
 document.addEventListener('visibilitychange', () => {
@@ -375,7 +356,6 @@ $('mute-all').onclick = () => { audio.unlock(); audio.setMuted(!audio.settings.m
 $('test-voice').onclick = () => { audio.unlock(); audio.narrate('The mountain is quiet. Your ascent begins.', { key: 'voice-test' }); };
 $('replay-narration').onclick = () => { audio.unlock(); audio.replay(); };
 $('skip-narration').onclick = () => audio.stopNarration();
-$('skip-death-cutscene').onclick = finishDeathCutscene;
 updateSoundControls();
 
 function frame(now) {
@@ -387,14 +367,8 @@ function frame(now) {
     if (now > toastUntil) $('toast').hidden = true;
     if (now > whisperUntil) $('whisper').hidden = true;
   } else accumulator = 0;
-  const frozen = settingsOpen || screen === 'pause' || screen === 'help' || screen === 'cutscene' && (document.hidden || !windowFocused);
+  const frozen = settingsOpen || screen === 'pause' || screen === 'help' || document.hidden;
   view?.render(frozen ? 0 : dt, now / 1000);
-  if (screen === 'cutscene') {
-    const cinematic = view.deathCutscene;
-    $('death-fade').style.opacity = String(cinematic.frame.fade);
-    $('death-cinematic-title').style.opacity = String(cinematic.frame.title);
-    if (cinematic.finished && !frozen) finishDeathCutscene();
-  }
   requestAnimationFrame(frame);
 }
 
