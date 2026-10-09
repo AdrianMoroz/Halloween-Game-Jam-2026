@@ -5,7 +5,6 @@ import { TacticalCamera } from '../src/camera.js';
 import { surfaceTexture } from '../src/art.js';
 import { Game } from '../src/game.js';
 import { LEVELS } from '../src/content.js';
-import { DeathCutscene } from '../src/cutscene.js';
 
 test('close camera follows interpolated movement and snaps to each level entry', () => {
   const game = new Game(LEVELS[0]), rig = new TacticalCamera();
@@ -48,53 +47,4 @@ test('surface textures are deterministic opaque assets with mipmaps and no DOM r
     assert.ok(new Set(first.image.data).size > 12);
     first.dispose(); second.dispose();
   }
-});
-
-test('death shots frame both combatants in landscape and portrait and preserve fog', () => {
-  for (const [width, height] of [[1200, 700], [360, 740]]) for (const separation of [0, 3]) {
-    const game = new Game({ ...LEVELS[0], map: Array(11).fill('...........'), start: { x: 5, y: 6 }, guards: [] });
-    const killer = { id: 'killer', tag: 'HordeEnemy', x: 5, y: 6 - separation, facing: 'south' };
-    const visible = [...game.visible], rig = new TacticalCamera(); rig.resize(width, height); rig.setGame(game);
-    const normalDistance = rig.camera.position.distanceTo(rig.focus);
-    game.damagePlayer(1, killer); const cutscene = new DeathCutscene(game); rig.startDeathCutscene(cutscene);
-    cutscene.update(.9); rig.updateDeathCutscene(cutscene);
-    for (const subject of [cutscene.player, cutscene.attackerEnd]) for (const y of [0.18, 1.55]) {
-      const point = rig.worldPosition(subject, y).project(rig.camera);
-      assert.ok(Math.abs(point.x) < .93 && Math.abs(point.y) < .78, `Clipped cinematic ${width}x${height}: ${point.toArray()}`);
-    }
-    assert.ok(rig.camera.position.distanceTo(rig.focus) < normalDistance);
-    assert.deepEqual([...game.visible], visible);
-  }
-});
-
-test('cinematic camera keeps the victim visible beside walls and temporary spell walls', () => {
-  const map = ['.........', '.........', '...###...', '...#.#...', '...#.....', '.........', '.........', '.........', '.........'];
-  const game = new Game({ ...LEVELS[0], map, start: { x: 4, y: 3 }, guards: [] }), rig = new TacticalCamera();
-  game.effects.push({ id: 'wall', kind: 'wall', tiles: [{ x: 5, y: 3 }], expires: 10 }); game.refreshVision();
-  rig.resize(1200, 700); rig.setGame(game); game.damagePlayer();
-  const cutscene = new DeathCutscene(game); rig.startDeathCutscene(cutscene);
-  for (let step = 0; step < 46; step++) {
-    cutscene.update(.1); rig.updateDeathCutscene(cutscene);
-    assert.equal(rig.shotBlocked(rig.camera.position, rig.worldPosition(cutscene.player, .18)), false);
-  }
-  const projected = rig.worldPosition(cutscene.player, .2).project(rig.camera);
-  assert.ok(Math.abs(projected.x) < .9 && Math.abs(projected.y) < .78);
-});
-
-test('reduced motion holds a steady death shot, resize retains it, and a new level restores tracking', () => {
-  const game = new Game(LEVELS[0]), rig = new TacticalCamera(); rig.resize(1200, 700); rig.setGame(game);
-  game.damagePlayer(); const cutscene = new DeathCutscene(game, true); rig.startDeathCutscene(cutscene);
-  const matrix = rig.camera.matrixWorld.clone(); cutscene.update(3); rig.updateDeathCutscene(cutscene);
-  assert.deepEqual(rig.camera.matrixWorld.elements, matrix.elements);
-  rig.resize(360, 740); assert.equal(rig.deathShot.cutscene, cutscene);
-  assert.ok(Number.isFinite(rig.camera.position.y));
-  rig.setGame(new Game(LEVELS[1])); assert.equal(rig.deathShot, null); assert.equal(rig.focus.z, 6.45);
-});
-
-test('a death at the exit keeps the victim clear of gate posts, lintel, and roof', () => {
-  const game = new Game({ ...LEVELS[0], map: Array(9).fill('.........'), start: { x: 4, y: 1 }, exit: { x: 4, y: 1 }, guards: [] });
-  const rig = new TacticalCamera(); rig.resize(1200, 700); rig.setGame(game); game.damagePlayer();
-  const cutscene = new DeathCutscene(game); rig.startDeathCutscene(cutscene); cutscene.update(1); rig.updateDeathCutscene(cutscene);
-  for (const height of [.18, 1.4]) assert.equal(rig.shotBlocked(rig.camera.position, rig.worldPosition(cutscene.player, height)), false);
-  assert.ok(rig.camera.position.y < 8);
 });

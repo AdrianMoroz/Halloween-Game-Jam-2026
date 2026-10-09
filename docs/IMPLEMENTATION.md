@@ -7,9 +7,9 @@ The following values and combat details fill gaps in the outline and are provisi
 ## Timing and grid authority
 
 - Real-time simulation at a fixed 60 Hz; rendering interpolates between grid positions.
-- Four cardinal directions only. Actors reserve destinations to stop player/guard swaps.
+- Four cardinal directions only. Actors reserve destinations. NPC pathfinding avoids both the current and reserved tiles of other actors; an occupied preferred first step causes a detour instead of a repeated rejected move. Equal-length route choices vary by decision, not by render frame.
 - Player starts at 4 tiles/second; patrol guards start at 1.25–1.5 tiles/second.
-- Fleeing speed is patrol speed × 1.55.
+- Fleeing speed is patrol speed × a per-witness factor from 1.45 to 1.7. Patrol pauses vary from 70% to 130% of the authored pause; at waypoints there is a 22% chance to reverse direction and a 45% chance to glance left or right during the pause. Initial entry pauses remain at least 0.6 seconds.
 - Execution lasts 2.5 seconds, within the specified 2–3 seconds.
 - Disposal lasts exactly 2 stationary seconds. Moving, casting, or taking damage resets the current disposal timer.
 - Other entities continue moving during execution. The target guard is captured immediately when the player commits to moving onto its tile; the execution begins on arrival. That guard stops movement and perception. A corpse appears after execution completes. Rendering samples the same execution timer for both participants: grab, wind-up, strike, and collapse, followed by an identical oriented corpse pose.
@@ -29,16 +29,27 @@ Offsets in `content.js` are `[forward, right]`, rotated by the current facing.
 | Yin Frost | Start | Freezes guards in the next three forward tiles for 5 seconds |
 | Bone Wall | Start | Three tiles across immediately ahead; lasts 7 seconds |
 | Knight's Strike | After courtyard 1 | Instant kill two forward / one right; leaves a corpse |
-| Spectral Flame | After courtyard 1 | Six-tile area ahead; instant kills with AutoDispose; also burns existing corpses in its area |
-| Black Eclipse | After courtyard 2 | Eight surrounding tiles; instant kills with AutoDispose |
+| Spectral Flame | After courtyard 1 | 0.7-second stationary channel, then six-tile area kills with AutoDispose; also burns existing corpses in its area |
+| Black Eclipse | After courtyard 2 | 1-second stationary channel, then kills on eight surrounding tiles with AutoDispose |
+
+Flame and Eclipse spend their cast on activation and lock movement, facing, other casts, strikes, and disposal while channeling. Their target area is captured at activation; victims must still be in that area on release. AI, alarms, and combat continue. Taking damage or triggering the horde cancels the cast without refunding its reserve. Pause, help, sound settings and hidden tabs freeze the simulation and commitment timer. A channel must finish before an exit can complete the level.
 
 The first level has exactly four unlocked skills. Later loadouts add actual selection choices. Spell walls are opaque and affect pathfinding. They cannot materialize inside an occupied or reserved actor tile. If walls temporarily block all escape routes, a witness remains in Flee and retries pathfinding until a route becomes available. Existing spell effects persist through the horde transition until they expire; new casts are locked.
 
 ## Horde
 
-Only walkable boundary tiles spawn reinforcements. Every selected spawn must currently have a reachable path to the player. Spawn interval begins at 0.9 seconds and accelerates to 0.3 seconds. Enemy count is capped at 70 to bound rendering and pathfinding costs. Horde speed increases slowly, capped at 3 tiles/second.
+Only walkable, unoccupied and unreserved boundary tiles spawn reinforcements. Every selected spawn must have a reachable path to the player and remain more than two tiles away. Spawn interval begins at 0.9 seconds and accelerates to 0.3 seconds. Enemy count is capped at 70 to bound rendering and pathfinding costs. A shuffled roster supplies all four archetypes in every group of four arrivals. Movement speeds increase by 0.018 tiles/second per elapsed horde second, up to the individual cap.
 
-Contact deals one HP of damage. A 0.7-second damage cooldown prevents one contact or a stack of enemies consuming multiple HP on the same simulation tick. Opposing movement swaps also register contact.
+| Archetype | Base / maximum speed | Attack | Wind-up | Damage | Base recovery |
+| --- | --- | --- | --- | --- | --- |
+| Swordsman (red) | 2 / 2.8 | One tile forward | 0.48s | 1 | 0.9s |
+| Runner (green) | 2.7 / 3.5 | Two-tile dagger line, followed by a one-tile lunge if free | 0.55s | 1 | 1.15s |
+| Lancer (blue) | 1.65 / 2.35 | Three-tile spear line | 0.8s | 1 | 1.35s |
+| Brute (ochre) | 1.4 / 1.95 | Two-deep, three-wide sweep | 1s | 2 | 1.6s |
+
+Enemies pursue reachable attack positions while respecting actor reservations. Runners sometimes intercept the player's reserved destination, and equal-length routes vary. Lancers hold spear range. Warnings stop the attacker and keep their originally marked tiles throughout the wind-up; they never home onto a dodge. Walls and spell walls occlude attacks. Recovery varies between 85% and 115% of its base value. Initial recovery is 0.4–0.7 seconds; every active attack still gives its full warning.
+
+Body contact and opposing movement swaps also deal the archetype's damage. A 0.7-second damage cooldown prevents one contact or a stack of enemies consuming multiple HP on the same simulation tick. Opposing movement swaps also register contact.
 
 The player can still execute original stealth guards in Horde Mode; those guards retain the StealthGuard tag and count toward the campaign ratio. HordeEnemy entities never count toward it. This prototype provides no attack for killing horde enemies; their role is the specified pursuit hazard on the way to the exit.
 
@@ -59,8 +70,8 @@ The original outline leaves the boss's attack controls and moves unspecified. To
 - At the summit, **Space** performs a free basic soul strike on the next forward tile. Damage: 3; cooldown: 0.4 seconds.
 - Offensive spells deal 6 boss damage when their patterns hit. Boss frost lasts 2 seconds. Trap hits also deal 6 damage.
 - The final arena is illuminated by the Bagua formation. It is a separate boss phase, so Horde Mode's spell lock does not apply there. The level-entry cast refill applies normally.
-- The grandmaster pursues and telegraphs a three-deep / three-wide frontal attack with red tiles.
-- The ordinary attack warning lasts 0.85 seconds; the immortal warning lasts 0.5 seconds.
+- The grandmaster pursues and varies between a three-deep / three-wide cleave, a three-tile thrust, and an eight-tile surrounding sweep. Only patterns covering the player can be selected; consecutive repeats are avoided when another pattern is available.
+- Ordinary wind-ups are 0.85 / 0.75 / 0.95 seconds for cleave / thrust / sweep; immortal wind-ups are 0.5 / 0.48 / 0.6 seconds. Every warning stays fixed so it can be dodged.
 - The summit exit does not bypass the encounter.
 
 For `r = StealthGuardsKilled / TotalStealthGuards`, the implementation follows ratio multiplication with minimum valid values:
@@ -84,15 +95,9 @@ The default view is a close perspective camera with a 40-degree vertical field o
 
 Three.js r180 is vendored with its original MIT license. Tiles and map walls use instancing. Basic geometry, materials and generated seal artwork avoid external graphics requests. Dynamic instance culling is disabled for visibility-changing map / overlay batches so stale bounds cannot hide new instances. Transient materials and instance buffers are released on level changes.
 
-### Death cutscene
+### Death and retry
 
-Fatal damage records the player's interpolated position and an immutable attacker snapshot. Horde contact identifies the enemy that caused the hit, including opposing movement crossings; a lethal hit stops subsequent horde updates in that tick. A boss hit identifies the grandmaster in both mortal and immortal branches. The game remains dead throughout the cinematic, so damage, AI, movement, rewards, and spell timers do not advance.
-
-`src/cutscene.js` supplies a 4.6-second render clock. The attacker follows through, the player recoils and drops to a knee, the body collapses by 2.55 seconds, and the frame fades to black during the last 0.75 seconds. Contact enemies separate visually into available paving to prevent overlapping silhouettes; their simulation positions remain unchanged. Other actors hold their poses and gameplay overlays disappear.
-
-The cinematic camera dollies from the current perspective into a close side angle, then drifts slightly toward the body. It fits both characters' bounds within the viewport and letterbox, checks candidate angles against visible map walls, active spell walls, and the gate's posts, lintel, plaque, and roof, and raises the camera where necessary. It retains fog and wall geometry. Reduced-motion preferences cut immediately to a steady shot. Resizing preserves the cinematic; a retry or new scene clears it.
-
-Space, Escape, or the focused touch-accessible Skip cutscene button settles the final pose and opens the existing retry screen. Sound settings, document visibility, and window focus gate the render clock. The original `death` / `death-immortal` narration cues begin at the retry screen, so existing WAV or MP3 mappings remain valid. No additional media files or animation libraries are required.
+Fatal damage records the player's interpolated position and an immutable attacker snapshot, then immediately opens the existing retry menu and plays the `death` or `death-immortal` narration cue. The ordinary 0.65-second fall can finish behind that menu with the tactical camera. There is no separate scene, cinematic camera, skip control or film timeline. Gameplay, damage, rewards and AI stop at death; a lethal horde hit stops subsequent enemy updates in that tick. Existing WAV or MP3 mappings remain valid.
 
 ## Audio
 

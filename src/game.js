@@ -1,6 +1,7 @@
-import { DEFAULT_STATS, DEFAULT_LOADOUT, DIRECTIONS, SKILL_BY_ID, LEVELS, BOSS_LEVEL, UPGRADES } from './content.js';
+import { DEFAULT_STATS, DEFAULT_LOADOUT, DIRECTIONS, SKILL_BY_ID, LEVELS, BOSS_LEVEL, UPGRADES,
+  HORDE_TYPES, BOSS_ATTACKS } from './content.js';
 import { Grid, key, sameTile, manhattan, shortestPath, shortestPathToAny, lineOfSight,
-  visibleTiles, rotateOffsets, actorPosition } from './grid.js';
+  visibleTiles, rotateOffsets, actorPosition, NEIGHBORS } from './grid.js';
 
 export const EXECUTION_SECONDS = 2.5;
 export const DISPOSAL_SECONDS = 2;
@@ -65,13 +66,14 @@ export class Game {
     this.loadout = [...loadout]; this.random = random; this.time = 0; this.state = 'playing';
     this.mode = level.id === BOSS_LEVEL.id ? 'boss' : 'stealth';
     this.player = { ...level.start, facing: 'north', hp: stats.maxHP, motion: null,
-      execution: null, disposal: null, damageCooldown: 0, attackCooldown: 0 };
+      execution: null, disposal: null, casting: null, damageCooldown: 0, attackCooldown: 0 };
     this.guards = level.guards.map(data => ({ ...data, ...data.patrol[0],
       patrol: data.patrol.map(p => ({ ...p })), tag: 'StealthGuard', state: 'patrol',
-      waypoint: 1 % data.patrol.length, pauseLeft: 0.6, motion: null, frozenUntil: 0 }));
+      waypoint: 1 % data.patrol.length, patrolDirection: 1, pauseLeft: 0.6 + this.random() * 0.25,
+      motion: null, frozenUntil: 0, routeOrder: this.shuffle(NEIGHBORS), fleeSpeed: 1.45 + this.random() * 0.25 }));
     this.corpses = []; this.effects = []; this.horde = []; this.events = [];
     this.castsLeft = stats.maxSpellCasts; this.castCooldown = 0; this.enemyId = 0;
-    this.hordeClock = 0; this.spawnClock = 0; this.spottedWhispers = new Set();
+    this.hordeClock = 0; this.spawnClock = 0; this.hordeRoster = []; this.spottedWhispers = new Set();
     this.boundaries = this.grid.boundaryTiles(); this.visible = new Set();
     this.visibilityRevision = 0; this.refreshVision();
     this.boss = this.mode === 'boss' ? { x: 9, y: 7, facing: 'south',
@@ -86,6 +88,34 @@ export class Game {
   blocked(x, y) { return this.grid.isWall(x, y) || this.spellBlocked(x, y); }
   isHidden() { return this.activeEffects('hide').some(e => e.tiles.some(p => sameTile(p, this.player))); }
   frozen(actor) { return actor.frozenUntil > this.time; }
+  shuffle(values) {
+    const result = [...values];
+    for (let i = result.length - 1; i > 0; i--) {
+      const j = Math.min(i, Math.floor(this.random() * (i + 1)));
+      [result[i], result[j]] = [result[j], result[i]];
+    }
+    return result;
+  }
+  navigationBlocker(actor) {
+    const occupied = new Set();
+    for (const other of [this.player, ...this.guards, ...this.horde, this.boss]) {
+      if (!other || other === actor || other.state === 'dead') continue;
+      occupied.add(key(other.x, other.y));
+      if (other.motion) occupied.add(key(other.motion.to.x, other.motion.to.y));
+    }
+    return (x, y) => this.spellBlocked(x, y) || occupied.has(key(x, y));
+  }
+  aim(actor, target) {
+    const dx = target.x - actor.x, dy = target.y - actor.y;
+    return Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'east' : 'west') : (dy > 0 ? 'south' : 'north');
+  }
+  attackTiles(actor, offsets, facing = actor.facing) {
+    return rotateOffsets(actor, DIRECTIONS[facing], offsets).filter(p => !this.blocked(p.x, p.y) &&
+      lineOfSight(this.grid, actor, p, (x, y) => this.spellBlocked(x, y)));
+  }
+  attackWarnings() {
+    return [...this.horde, this.boss].flatMap(actor => actor?.warning?.tiles || []);
+  }
   refreshVision() {
     if (this.mode === 'horde' || this.mode === 'boss') {
       this.visible = new Set();
@@ -109,7 +139,7 @@ export class Game {
     return this.guards.find(g => g.state !== 'dead' && g.motion && g.motion.to.x === x && g.motion.to.y === y);
   }
   face(direction) {
-    if (this.state !== 'playing' || this.player.execution || !DIRECTIONS[direction]) return false;
+    if (this.state !== 'playing' || this.player.execution || this.player.casting || !DIRECTIONS[direction]) return false;
     this.player.facing = direction; return true;
   }
 
@@ -153,6 +183,7 @@ export class Game {
   alert(guard, reason) {
     if (guard.state !== 'patrol') return;
     guard.state = 'flee'; guard.pauseLeft = 0;
+    guard.routeOrder = this.shuffle(NEIGHBORS);
     if (this.mode !== 'horde') this.mode = 'chase';
     this.emit('alert', { guardId: guard.id, reason });
   }
@@ -182,7 +213,7 @@ export class Game {
   }
 
   cast(slot) {
-    if (this.state !== 'playing' || this.mode === 'horde' || this.player.execution || this.player.motion || this.castCooldown > 0) return false;
+    if (this.state !== 'playing' || this.mode === 'horde' || this.player.execution || this.player.casting || this.player.motion || this.castCooldown > 0) return false;
     if (this.castsLeft <= 0) { this.emit('notice', { text: 'Your dark reserve is exhausted.' }); return false; }
     const skill = SKILL_BY_ID[this.loadout[slot]];
     if (!skill) return false;
@@ -194,6 +225,21 @@ export class Game {
     }
     if (!tiles.length) { this.emit('notice', { text: 'No valid target tiles in that direction.' }); return false; }
     this.castsLeft--; this.castCooldown = 0.22; this.player.disposal = null;
+    if (skill.castTime) {
+      this.player.casting = { skillId: skill.id, tiles, elapsed: 0, duration: skill.castTime };
+      this.emit('channel', { skill: skill.id });
+    } else this.resolveSpell(skill, tiles);
+    return true;
+  }
+
+  cancelCast(reason) {
+    if (!this.player.casting) return;
+    this.player.casting = null; this.castCooldown = 0.22;
+    this.emit('notice', { text: reason === 'alarm' ? 'The alarm breaks your channel. Your reserve is spent.' :
+      'The hit breaks your channel. Your reserve is spent.' });
+  }
+
+  resolveSpell(skill, tiles) {
     if (['hide', 'trap', 'wall'].includes(skill.kind)) {
       this.effects.push({ id: `effect-${this.enemyId++}`, kind: skill.kind, tiles, expires: this.time + skill.duration });
     }
@@ -208,7 +254,7 @@ export class Game {
       }
     }
     this.resolveTraps(); this.refreshVision();
-    this.emit('cast', { skill: skill.id, tiles }); return true;
+    this.emit('cast', { skill: skill.id, tiles });
   }
 
   resolveTraps() {
@@ -227,6 +273,7 @@ export class Game {
 
   triggerHorde() {
     if (this.mode === 'horde' || this.mode === 'boss' || this.state !== 'playing') return;
+    this.cancelCast('alarm');
     this.mode = 'horde'; this.spawnClock = 0; this.hordeClock = 0;
     this.refreshVision(); this.emit('horde');
   }
@@ -234,6 +281,7 @@ export class Game {
   damagePlayer(amount = 1, attacker = null) {
     if (this.state !== 'playing' || this.player.damageCooldown > 0) return false;
     this.player.hp = Math.max(0, this.player.hp - amount);
+    this.cancelCast('damage');
     this.player.damageCooldown = 0.7; this.player.disposal = null;
     this.emit('damage', { amount });
     if (this.player.hp <= 0) {
@@ -248,16 +296,21 @@ export class Game {
   }
 
   spawnHorde() {
-    const options = this.boundaries.filter(p => !this.blocked(p.x, p.y) && !sameTile(p, this.player) &&
-      !this.horde.some(e => sameTile(e, p)) && shortestPath(this.grid, p, this.player, (x, y) => this.spellBlocked(x, y)));
+    const occupied = this.navigationBlocker(null);
+    const options = this.boundaries.filter(p => !this.grid.isWall(p.x, p.y) && !occupied(p.x, p.y) &&
+      manhattan(p, this.player) > 2 && shortestPath(this.grid, p, this.player, (x, y) => this.spellBlocked(x, y)));
     if (!options.length || this.horde.length >= 70) return;
     const position = options[Math.min(options.length - 1, Math.floor(this.random() * options.length))];
+    if (!this.hordeRoster.length) this.hordeRoster = this.shuffle(Object.keys(HORDE_TYPES));
+    const archetype = this.hordeRoster.pop(), profile = HORDE_TYPES[archetype];
     this.horde.push({ ...position, id: `horde-${this.enemyId++}`, tag: 'HordeEnemy', facing: 'south', motion: null,
-      speed: Math.min(3, 1.8 + this.hordeClock * 0.018) });
+      archetype, appearance: profile.appearance, warning: null, thinkLeft: 0,
+      cooldown: 0.4 + this.random() * 0.3,
+      speed: Math.min(profile.maxSpeed, profile.speed + this.hordeClock * 0.018) });
   }
 
   strike() {
-    if (this.state !== 'playing' || this.mode !== 'boss' || this.player.execution || this.player.motion || this.player.attackCooldown > 0) return false;
+    if (this.state !== 'playing' || this.mode !== 'boss' || this.player.execution || this.player.casting || this.player.motion || this.player.attackCooldown > 0) return false;
     this.player.attackCooldown = 0.4;
     this.player.attackStartedAt = this.time;
     const facing = DIRECTIONS[this.player.facing];
@@ -289,24 +342,85 @@ export class Game {
         boss.attackStartedAt = this.time;
         if (boss.warning.tiles.some(tile => sameTile(tile, this.player))) this.damagePlayer(boss.damage, boss);
         this.emit('bossAttack', { tiles: boss.warning.tiles });
-        boss.warning = null; boss.cooldown = boss.immune ? 0.65 : 1.1;
+        boss.warning = null; boss.cooldown = (boss.immune ? 0.65 : 1.1) * (0.85 + this.random() * 0.3);
       }
       return;
     }
     if (boss.motion) return;
-    if (manhattan(boss, this.player) <= 3 && boss.cooldown <= 0) {
-      const dx = this.player.x - boss.x, dy = this.player.y - boss.y;
-      boss.facing = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'east' : 'west') : (dy > 0 ? 'south' : 'north');
-      const offsets = [];
-      for (let f = 1; f <= 3; f++) for (const r of [-1, 0, 1]) offsets.push([f, r]);
-      const tiles = rotateOffsets(boss, DIRECTIONS[boss.facing], offsets)
-        .filter(p => !this.blocked(p.x, p.y) && lineOfSight(this.grid, boss, p, (x, y) => this.spellBlocked(x, y)));
-      boss.warning = { remaining: boss.immune ? 0.5 : 0.85, duration: boss.immune ? 0.5 : 0.85, tiles };
+    const facing = this.aim(boss, this.player);
+    let attacks = BOSS_ATTACKS.map(pattern => ({ pattern, tiles: this.attackTiles(boss, pattern.offsets, facing) }))
+      .filter(attack => attack.tiles.some(tile => sameTile(tile, this.player)));
+    if (attacks.length > 1) attacks = attacks.filter(attack => attack.pattern.id !== boss.lastAttack);
+    if (attacks.length && boss.cooldown <= 0) {
+      const { pattern, tiles } = attacks[Math.min(attacks.length - 1, Math.floor(this.random() * attacks.length))];
+      boss.facing = facing; boss.lastAttack = pattern.id;
+      const duration = boss.immune ? pattern.nightmareWindup : pattern.windup;
+      boss.warning = { remaining: duration, duration, tiles, pattern: pattern.id };
       this.emit('bossWarning');
-    } else if (manhattan(boss, this.player) > 1) {
-      const path = shortestPath(this.grid, boss, this.player, (x, y) => this.spellBlocked(x, y));
+    } else if (!attacks.length && manhattan(boss, this.player) > 1) {
+      const occupied = this.navigationBlocker(boss);
+      const path = shortestPath(this.grid, boss, this.player, (x, y) =>
+        !sameTile({ x, y }, this.player) && occupied(x, y));
       if (path?.length > 2) this.startStep(boss, path[1], 1 / boss.speed);
     }
+  }
+
+  hordeAttackPositions(target, profile) {
+    const goals = [];
+    for (const facing of Object.keys(DIRECTIONS)) {
+      for (const offset of rotateOffsets({ x: 0, y: 0 }, DIRECTIONS[facing], profile.offsets)) {
+        const position = { x: target.x - offset.x, y: target.y - offset.y };
+        if (this.grid.isWall(position.x, position.y)) continue;
+        if (this.attackTiles(position, profile.offsets, facing).some(tile => sameTile(tile, target))) goals.push(position);
+      }
+    }
+    return goals;
+  }
+
+  updateHordeEnemy(enemy, dt) {
+    const profile = HORDE_TYPES[enemy.archetype] || HORDE_TYPES.hunter;
+    const crossing = enemy.motion && this.player.motion &&
+      sameTile(enemy.motion.to, this.player.motion.from) && sameTile(enemy.motion.from, this.player.motion.to);
+    this.advanceStep(enemy, dt);
+    if (sameTile(enemy, this.player) || crossing) this.damagePlayer(profile.damage, enemy);
+    if (this.state !== 'playing') return;
+    enemy.cooldown = Math.max(0, (enemy.cooldown || 0) - dt);
+    enemy.thinkLeft = Math.max(0, (enemy.thinkLeft || 0) - dt);
+    if (enemy.warning) {
+      enemy.warning.remaining -= dt;
+      if (enemy.warning.remaining <= 1e-8) {
+        const tiles = enemy.warning.tiles;
+        enemy.attackStartedAt = this.time;
+        if (tiles.some(tile => sameTile(tile, this.player))) this.damagePlayer(profile.damage, enemy);
+        this.emit('hordeAttack', { tiles });
+        enemy.warning = null; enemy.cooldown = profile.recovery * (0.85 + this.random() * 0.3);
+        // A runner commits to the marked direction, never to a new player location.
+        if (this.state === 'playing' && enemy.archetype === 'runner') {
+          const d = DIRECTIONS[enemy.facing], next = { x: enemy.x + d.x, y: enemy.y + d.y };
+          if (!this.blocked(next.x, next.y) && !this.navigationBlocker(enemy)(next.x, next.y)) this.startStep(enemy, next, 1 / 6);
+        }
+      }
+      return;
+    }
+    if (enemy.motion || sameTile(enemy, this.player)) return;
+    const facing = this.aim(enemy, this.player), tiles = this.attackTiles(enemy, profile.offsets, facing);
+    if (enemy.cooldown <= 0 && tiles.some(tile => sameTile(tile, this.player))) {
+      enemy.facing = facing;
+      enemy.warning = { remaining: profile.windup, duration: profile.windup, tiles };
+      return;
+    }
+    if (enemy.thinkLeft > 0) return;
+    enemy.thinkLeft = 0.12 + this.random() * 0.12;
+    const target = enemy.archetype === 'runner' && this.player.motion && this.random() < 0.7 ? this.player.motion.to : this.player;
+    const path = shortestPathToAny(this.grid, enemy, this.hordeAttackPositions(target, profile),
+      this.navigationBlocker(enemy), this.shuffle(NEIGHBORS));
+    if (path?.length > 1) this.startStep(enemy, path[1], 1 / enemy.speed);
+  }
+
+  perceive(guard) {
+    if (guard.state !== 'patrol') return;
+    if (!this.isHidden() && (this.guardSees(guard, this.player) || sameTile(guard, this.player))) this.alert(guard, 'player');
+    else if (this.corpses.some(corpse => this.guardSees(guard, corpse) || sameTile(guard, corpse))) this.alert(guard, 'corpse');
   }
 
   updateGuard(guard, dt) {
@@ -317,30 +431,36 @@ export class Game {
       if (guard.state === 'dead') return;
       if (guard.state === 'flee' && this.grid.isBoundary(guard.x, guard.y)) this.triggerHorde();
       if (guard.state === 'patrol' && sameTile(guard, guard.patrol[guard.waypoint])) {
-        guard.waypoint = (guard.waypoint + 1) % guard.patrol.length;
-        guard.pauseLeft = guard.pause;
+        if (this.random() < 0.22) guard.patrolDirection *= -1;
+        guard.waypoint = (guard.waypoint + guard.patrolDirection + guard.patrol.length) % guard.patrol.length;
+        guard.pauseLeft = guard.pause * (0.7 + this.random() * 0.6);
+        guard.pauseDuration = guard.pauseLeft; guard.looked = false;
+        guard.scanTurn = this.random() < 0.45 ? (this.random() < 0.5 ? -1 : 1) : 0;
+        guard.routeOrder = this.shuffle(NEIGHBORS);
       }
     }
-    if (guard.state === 'patrol') {
-      if (!this.isHidden() && (this.guardSees(guard, this.player) || sameTile(guard, this.player))) this.alert(guard, 'player');
-      else if (this.corpses.some(corpse => this.guardSees(guard, corpse) || sameTile(guard, corpse))) this.alert(guard, 'corpse');
-    }
+    this.perceive(guard);
     if (guard.motion) return;
     guard.pauseLeft = Math.max(0, guard.pauseLeft - dt);
+    if (guard.state === 'patrol' && guard.scanTurn && !guard.looked && guard.pauseLeft <= guard.pauseDuration / 2) {
+      const directions = Object.keys(DIRECTIONS), index = directions.indexOf(guard.facing);
+      guard.facing = directions[(index + guard.scanTurn + 4) % 4]; guard.looked = true;
+      this.perceive(guard);
+    }
     if (guard.pauseLeft > 0) return;
-    const obstacles = (x, y) => this.spellBlocked(x, y);
+    // Search around actor reservations instead of rejecting the same first step
+    // forever. A witness must keep escaping even when the player stands still.
+    const obstacles = this.navigationBlocker(guard);
     let path;
     if (guard.state === 'flee') {
       if (this.grid.isBoundary(guard.x, guard.y)) { this.triggerHorde(); return; }
-      path = shortestPathToAny(this.grid, guard, this.boundaries, obstacles);
-    } else path = shortestPath(this.grid, guard, guard.patrol[guard.waypoint], obstacles);
+      path = shortestPathToAny(this.grid, guard, this.boundaries, obstacles, guard.routeOrder);
+    } else path = shortestPath(this.grid, guard, guard.patrol[guard.waypoint], obstacles, guard.routeOrder);
     if (!path || path.length < 2) return;
     const next = path[1];
-    if (sameTile(next, this.player) || this.player.motion && sameTile(next, this.player.motion.to)) return;
-    if (this.guards.some(other => other !== guard && other.state !== 'dead' && (sameTile(other, next) || other.motion && sameTile(other.motion.to, next)))) return;
-    this.startStep(guard, next, 1 / (guard.speed * (guard.state === 'flee' ? 1.55 : 1)));
+    this.startStep(guard, next, 1 / (guard.speed * (guard.state === 'flee' ? guard.fleeSpeed : 1)));
     // Turning is a simulation action: perception uses the new facing immediately.
-    if (guard.state === 'patrol' && !this.isHidden() && this.guardSees(guard, this.player)) this.alert(guard, 'player');
+    this.perceive(guard);
   }
 
   update(dt) {
@@ -349,6 +469,7 @@ export class Game {
     this.castCooldown = Math.max(0, this.castCooldown - dt);
     this.player.damageCooldown = Math.max(0, this.player.damageCooldown - dt);
     this.player.attackCooldown = Math.max(0, this.player.attackCooldown - dt);
+    if (this.player.casting) this.player.casting.elapsed += dt;
     const previousEffects = this.effects.length;
     this.effects = this.effects.filter(e => e.expires > this.time);
     if (previousEffects !== this.effects.length) this.refreshVision();
@@ -367,7 +488,7 @@ export class Game {
         this.killGuard(this.guards.find(g => g.id === execution.guardId), false, 'execution');
         this.player.execution = null;
       }
-    } else if (!this.player.motion) {
+    } else if (!this.player.motion && !this.player.casting) {
       const corpse = this.corpses.find(c => sameTile(c, this.player));
       if (corpse) {
         if (this.player.disposal?.corpseId !== corpse.id) this.player.disposal = { corpseId: corpse.id, elapsed: 0 };
@@ -386,25 +507,23 @@ export class Game {
       this.hordeClock += dt; this.spawnClock -= dt;
       if (this.spawnClock <= 0) { this.spawnHorde(); this.spawnClock = Math.max(0.3, 0.9 - this.hordeClock * 0.012); }
       for (const enemy of this.horde) {
-        const crossing = enemy.motion && this.player.motion &&
-          sameTile(enemy.motion.to, this.player.motion.from) && sameTile(enemy.motion.from, this.player.motion.to);
-        this.advanceStep(enemy, dt);
-        if (sameTile(enemy, this.player) || crossing) this.damagePlayer(1, enemy);
+        this.updateHordeEnemy(enemy, dt);
         if (this.state !== 'playing') break;
-        if (!enemy.motion && !sameTile(enemy, this.player)) {
-          const path = shortestPath(this.grid, enemy, this.player, (x, y) => this.spellBlocked(x, y));
-          if (path?.length > 1) this.startStep(enemy, path[1], 1 / enemy.speed);
-        }
       }
     }
     if (this.state === 'playing') this.updateBoss(dt);
     if (this.state !== 'playing') return;
+    const casting = this.player.casting;
+    if (casting && casting.elapsed + 1e-8 >= casting.duration) {
+      this.player.casting = null; this.castCooldown = 0.22;
+      this.resolveSpell(SKILL_BY_ID[casting.skillId], casting.tiles);
+    }
     for (const [index, whisper] of (this.level.whispers || []).entries()) {
       if (!this.spottedWhispers.has(index) && manhattan(whisper, this.player) <= 2) {
         this.spottedWhispers.add(index); this.emit('whisper', { text: whisper.text, index });
       }
     }
-    if (!this.boss && !this.player.motion && !this.player.execution && sameTile(this.player, this.level.exit)) {
+    if (!this.boss && !this.player.motion && !this.player.execution && !this.player.casting && sameTile(this.player, this.level.exit)) {
       this.state = 'complete'; this.emit('complete');
     }
   }

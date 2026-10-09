@@ -3,7 +3,6 @@ import { actorPosition, key } from './grid.js';
 import { SKILL_BY_ID } from './content.js';
 import { TacticalCamera } from './camera.js';
 import { DISPATCH_SECONDS } from './game.js';
-import { DeathCutscene } from './cutscene.js';
 import { surfaceTexture, copingGeometry, characterModel, corpseModel, animateCharacter, animateCorpse } from './art.js';
 
 const COLORS = { stone: 0x253f3c, wall: 0x46544e, gold: 0xcaaa70,
@@ -89,7 +88,7 @@ export class GameView {
     this.dynamicMaterials.clear(); this.entities.clear(); this.flashes = [];
     if (this.sealTexture) { this.sealTexture.dispose(); this.sealTexture = null; }
     this.game = game; this.demo = preview; this.revision = -1; this.previewSkill = null; this.terminalTime = 0;
-    this.deathCutscene = null; this.sceneElapsed = 0;
+    this.sceneElapsed = 0;
     this.cameraRig.setGame(game, preview);
     this.world = new THREE.Group(); this.scene.add(this.world);
     const { width, height } = game.grid, count = width * height;
@@ -113,7 +112,7 @@ export class GameView {
     this.world.add(this.exitGate);
     this.cones = this.overlay(96, 0xeac279, 0.2, 0.03);
     this.targets = this.overlay(32, COLORS.yin, 0.38, 0.05);
-    this.danger = this.overlay(32, 0xee745e, 0.45, 0.07);
+    this.danger = this.overlay(count, 0xee745e, 0.45, 0.07);
     if (game.boss) this.makeSeal();
     this.refreshMap(); this.resize();
   }
@@ -262,25 +261,14 @@ export class GameView {
   get overview() { return this.cameraRig.overview; }
   toggleCamera() { return this.cameraRig.toggle(); }
 
-  startDeathCutscene(reducedMotion = false) {
-    this.deathCutscene = new DeathCutscene(this.game, reducedMotion);
-    this.deathCutscene.worldTime = this.sceneElapsed;
-    this.previewSkill = null; this.shake = 0;
-    this.cameraRig.startDeathCutscene(this.deathCutscene);
-  }
-
-  finishDeathCutscene() { this.deathCutscene?.finish(); }
-
   render(dt, elapsed) {
     const game = this.game;
     if (!game) return;
-    const cinematic = this.deathCutscene, frame = cinematic?.update(dt);
-    if (!cinematic && dt > 0) this.sceneElapsed = elapsed;
-    const visualTime = cinematic ? cinematic.worldTime : elapsed;
-    // Finish terminal falls without advancing rules. A death cutscene supplies
-    // its own victim/attacker poses while the rest of the scene stays still.
+    this.sceneElapsed += Math.max(0, dt);
+    // Ordinary falls finish behind the retry menu without advancing the game.
     this.terminalTime = game.state === 'playing' ? 0 : this.terminalTime + Math.max(0, dt);
-    const animationTime = game.time + (cinematic ? 0 : this.terminalTime);
+    const animationTime = game.time + this.terminalTime;
+    const visualTime = this.demo ? this.sceneElapsed : animationTime;
     if (this.revision !== game.visibilityRevision) this.refreshMap();
     const aliveKeys = new Set();
     const syncActor = (id, actor, kind) => {
@@ -288,12 +276,7 @@ export class GameView {
       let mesh = this.entities.get(id);
       if (!mesh) { mesh = this.makeActor(kind); this.entities.set(id, mesh); }
       let position = actorPosition(actor);
-      const role = cinematic ? id === 'player' ? 'victim' : id === cinematic.attacker?.id ? 'attacker' : null : null;
-      if (role === 'victim') position = cinematic.player;
-      else if (role === 'attacker') position = {
-        x: THREE.MathUtils.lerp(cinematic.attacker.position.x, cinematic.attackerEnd.x, frame.spread),
-        y: THREE.MathUtils.lerp(cinematic.attacker.position.y, cinematic.attackerEnd.y, frame.spread) };
-      else if (actor.death?.position && actor.death.method !== 'execution') {
+      if (actor.death?.position && actor.death.method !== 'execution') {
         const p = Math.min(1, Math.max(0, (animationTime - actor.death.startedAt) / DISPATCH_SECONDS));
         position = { x: actor.death.position.x + (actor.x - actor.death.position.x) * p,
           y: actor.death.position.y + (actor.y - actor.death.position.y) * p };
@@ -304,19 +287,18 @@ export class GameView {
       const execution = actor.id === game.player.execution?.guardId ? game.player.execution : null;
       mesh.position.copy(this.position(position.x, position.y));
       mesh.rotation.y = facingAngle(actor.death?.facing || (execution ? game.player.facing : actor.facing));
-      if (role) mesh.rotation.y = Math.atan2(-cinematic.direction.x, -cinematic.direction.y) + (role === 'attacker' ? Math.PI : 0);
-      animateCharacter(mesh, actor, visualTime, animationTime, { execution, deathScene: frame, role });
+      animateCharacter(mesh, actor, visualTime, animationTime, { execution });
       const color = actor.frozenUntil > game.time ? COLORS.frost : actor.state === 'flee' ? COLORS.alarm : actor.immune ? 0xf7ce86 : mesh.userData.baseColor;
       mesh.userData.robeMaterial.color.set(color);
       mesh.userData.ring.scale.setScalar(kind === 'player' ? 1 + Math.sin(visualTime * 3) * 0.055 : 1);
-      if (kind === 'player' && actor.damageCooldown > 0) mesh.userData.robeMaterial.emissive.set(cinematic && frame.time > 0.65 ? 0x161022 : 0xaa3333);
+      if (kind === 'player' && actor.damageCooldown > 0) mesh.userData.robeMaterial.emissive.set(0xaa3333);
       else if (actor.death?.autoDispose) mesh.userData.robeMaterial.emissive.set(0x317e5e);
       else mesh.userData.robeMaterial.emissive.set(kind === 'player' ? 0x161022 : actor.immune ? 0x8d6020 : 0x000000);
     };
     syncActor('player', game.player, 'player');
     for (const guard of game.guards) if (guard.state !== 'dead' || guard.death && guard.death.method !== 'execution' &&
       animationTime < guard.death.startedAt + DISPATCH_SECONDS) syncActor(guard.id, guard, 'guard');
-    for (const enemy of game.horde) syncActor(enemy.id, enemy, 'horde');
+    for (const enemy of game.horde) syncActor(enemy.id, enemy, enemy.appearance || 'horde');
     if (game.boss) syncActor('boss', game.boss, 'boss');
     for (const corpse of game.corpses) {
       if (animationTime < (corpse.settlesAt || 0)) continue;
@@ -343,18 +325,19 @@ export class GameView {
       });
       this.entities.delete(id);
     }
-    this.fillOverlay(this.cones, cinematic ? [] : game.guards.filter(g => g.state !== 'dead').flatMap(g => game.visionCone(g)));
-    this.fillOverlay(this.targets, !cinematic && this.previewSkill && game.mode !== 'horde' && !game.player.execution ? game.spellTiles(this.previewSkill) : []);
-    this.fillOverlay(this.danger, cinematic ? [] : game.boss?.warning?.tiles || []);
-    if (game.boss?.warning) this.danger.material.opacity = 0.35 + Math.sin(visualTime * 18) * 0.15;
+    this.fillOverlay(this.cones, game.guards.filter(g => g.state !== 'dead').flatMap(g => game.visionCone(g)));
+    this.fillOverlay(this.targets, game.state === 'playing' ? game.player.casting?.tiles ||
+      (this.previewSkill && game.mode !== 'horde' && !game.player.execution ? game.spellTiles(this.previewSkill) : []) : []);
+    const warnings = game.state === 'playing' ? game.attackWarnings() : [];
+    this.fillOverlay(this.danger, warnings);
+    this.danger.material.opacity = 0.4 + Math.sin(game.time * 18) * 0.12;
     for (const flash of this.flashes) {
       flash.age += dt; flash.material.opacity = Math.max(0, 0.75 - flash.age * 1.5);
       if (flash.age >= 0.5) { this.world.remove(flash.group); flash.material.dispose(); }
     }
     this.flashes = this.flashes.filter(f => f.age < 0.5);
     this.shake = Math.max(0, this.shake - dt * 0.8);
-    if (cinematic) this.cameraRig.updateDeathCutscene(cinematic);
-    else this.cameraRig.update(dt, elapsed, this.shake);
+    this.cameraRig.update(dt, visualTime, this.shake);
     this.renderer.render(this.scene, this.camera);
   }
 }

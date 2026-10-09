@@ -30,17 +30,39 @@ export const SKILLS = [
     kind: 'kill', unlock: 1, autoDispose: false, offsets: [[2, 1]],
     description: 'Strike two tiles forward and one right. Instant kill; leaves a corpse.' },
   { id: 'flame', name: 'Spectral Flame', short: 'Flame', symbol: '♧', color: '#84d7b3',
-    kind: 'kill', unlock: 1, autoDispose: true,
+    kind: 'kill', unlock: 1, autoDispose: true, castTime: 0.7,
     offsets: [[1, -1], [1, 0], [1, 1], [2, -1], [2, 0], [2, 1]],
-    description: 'Burn a 2 × 3 area ahead. Instant kills; no corpses remain.' },
+    description: 'Stand still for 0.7 seconds, then burn a 2 × 3 area ahead. Taking damage interrupts the cast. No corpses remain.' },
   { id: 'eclipse', name: 'Black Eclipse', short: 'Eclipse', symbol: '◒', color: '#bba1fc',
-    kind: 'kill', unlock: 2, autoDispose: true,
+    kind: 'kill', unlock: 2, autoDispose: true, castTime: 1,
     offsets: [[-1, -1], [-1, 0], [-1, 1], [0, -1], [0, 1], [1, -1], [1, 0], [1, 1]],
-    description: 'Erase guards on all eight surrounding tiles. No corpses remain.' },
+    description: 'Stand still for 1 second, then erase all eight surrounding tiles. Taking damage interrupts the cast. No corpses remain.' },
 ];
 
 export const DEFAULT_LOADOUT = SKILLS.filter(s => s.unlock === 0).map(s => s.id);
 export const SKILL_BY_ID = Object.fromEntries(SKILLS.map(skill => [skill.id, skill]));
+
+// Reinforcements share the movement graph but have distinct weapons and timing.
+// Every attack marks its fixed target tiles before it can deal damage.
+export const HORDE_TYPES = {
+  hunter: { name: 'Swordsman', appearance: 'horde', speed: 2, maxSpeed: 2.8,
+    damage: 1, windup: 0.48, recovery: 0.9, offsets: [[1, 0]] },
+  runner: { name: 'Runner', appearance: 'runner', speed: 2.7, maxSpeed: 3.5,
+    damage: 1, windup: 0.55, recovery: 1.15, offsets: [[1, 0], [2, 0]] },
+  lancer: { name: 'Lancer', appearance: 'lancer', speed: 1.65, maxSpeed: 2.35,
+    damage: 1, windup: 0.8, recovery: 1.35, offsets: [[1, 0], [2, 0], [3, 0]] },
+  brute: { name: 'Brute', appearance: 'brute', speed: 1.4, maxSpeed: 1.95,
+    damage: 2, windup: 1, recovery: 1.6,
+    offsets: [[1, -1], [1, 0], [1, 1], [2, -1], [2, 0], [2, 1]] },
+};
+
+export const BOSS_ATTACKS = [
+  { id: 'cleave', windup: 0.85, nightmareWindup: 0.5,
+    offsets: [[1, -1], [1, 0], [1, 1], [2, -1], [2, 0], [2, 1], [3, -1], [3, 0], [3, 1]] },
+  { id: 'thrust', windup: 0.75, nightmareWindup: 0.48, offsets: [[1, 0], [2, 0], [3, 0]] },
+  { id: 'sweep', windup: 0.95, nightmareWindup: 0.6,
+    offsets: [[-1, -1], [-1, 0], [-1, 1], [0, -1], [0, 1], [1, -1], [1, 0], [1, 1]] },
+];
 
 function courtyard(extraWalls = []) {
   const width = 19, height = 17;

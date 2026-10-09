@@ -1,5 +1,4 @@
 import * as THREE from '../vendor/three.module.js';
-import { cinematicPhase } from './cutscene.js';
 import { DISPATCH_SECONDS, DISPOSAL_SECONDS } from './game.js';
 
 // Original, deterministic surface art. Data textures work offline and in the
@@ -105,11 +104,15 @@ const PROFILES = {
   player: { cloth: 0x514a76, trim: 0xa99abc, armor: 0x4c5460, skin: 0xceb0a0, hair: 0x191d2b },
   guard: { cloth: 0x8e9574, trim: 0xcab584, armor: 0x565d51, skin: 0xccac8e, hair: 0x252825 },
   horde: { cloth: 0x855d50, trim: 0xbbb092, armor: 0x514b43, skin: 0xa58f7c, hair: 0x352a26 },
+  runner: { cloth: 0x4f8265, trim: 0xa7cc9b, armor: 0x394e40, skin: 0xb29882, hair: 0x222e26 },
+  lancer: { cloth: 0x536c94, trim: 0xa9c7e5, armor: 0x455466, skin: 0xbba086, hair: 0x252b38 },
+  brute: { cloth: 0x967344, trim: 0xd9b879, armor: 0x645b46, skin: 0xb99879, hair: 0x352d24 },
   boss: { cloth: 0xd2d0b2, trim: 0xddba71, armor: 0x7c7960, skin: 0xd0b89b, hair: 0xb4b7ad },
 };
 
 export function characterModel(view, kind) {
-  const profile = PROFILES[kind], isPlayer = kind === 'player', isBoss = kind === 'boss', isHorde = kind === 'horde';
+  const profile = PROFILES[kind], isPlayer = kind === 'player', isBoss = kind === 'boss';
+  const isHorde = ['horde', 'runner', 'lancer', 'brute'].includes(kind);
   const root = new THREE.Group(), body = new THREE.Group(); root.add(body);
   const cloth = view.surfaceMaterial('cloth', profile.cloth).clone();
   cloth.name = `${kind}-cloth`; cloth.emissive.set(isPlayer ? 0x161022 : 0x000000);
@@ -156,6 +159,14 @@ export function characterModel(view, kind) {
   if (kind === 'guard') {
     place(body, cylinder(0.045, 0.245, 0.095, armor, 12), 0, 1.41, 0);
     place(body, cylinder(0.07, 0.07, 0.03, trim), 0, 1.47, 0);
+  } else if (kind === 'lancer' || kind === 'brute') {
+    place(body, cylinder(0.11, 0.155, 0.14, armor), 0, 1.41, 0);
+    place(body, view.box(0.23, 0.035, 0.24, trim), 0, 1.35, 0);
+    if (kind === 'lancer') place(body, view.cone(0.04, 0.24, trim), 0, 1.59, 0.025);
+    else for (const side of [-1, 1]) place(body, view.box(0.19, 0.10, 0.28, armor), side * 0.22, 1.08, 0);
+  } else if (kind === 'runner') {
+    const hood = view.sphere(0.15, cloth); hood.scale.set(1, 0.8, 1);
+    place(body, hood, 0, 1.39, 0.03);
   } else if (isBoss) {
     place(body, view.box(0.23, 0.06, 0.18, trim), 0, 1.40, 0);
     for (const side of [-1, 1]) place(body, view.box(0.028, 0.20, 0.028, trim), side * 0.09, 1.50, 0.035, [0, 0, side * -0.2]);
@@ -174,9 +185,20 @@ export function characterModel(view, kind) {
     place(arm, view.box(0.083, 0.09, 0.08, skin), 0, -0.42, -0.02);
     if (!isHorde) place(arm, view.box(0.15, 0.07, 0.20, armor), 0, -0.025, 0);
     if (side === 1) {
-      place(arm, view.box(0.024, 0.022, isBoss ? 0.74 : 0.57, steel), 0, -0.40, isBoss ? -0.44 : -0.355);
-      place(arm, view.box(0.16, 0.027, 0.035, trim), 0, -0.40, -0.073);
-      place(arm, view.box(0.032, 0.031, 0.13, leather), 0, -0.40, 0.01);
+      if (kind === 'lancer') {
+        place(arm, view.box(0.035, 0.035, 1.17, leather), 0, -0.40, -0.47);
+        place(arm, view.cone(0.10, 0.30, steel, 4), 0, -0.40, -1.20, [-Math.PI / 2, 0, 0]);
+        place(arm, view.box(0.045, 0.045, 0.09, trim), 0, -0.40, -1.03);
+      } else if (kind === 'brute') {
+        place(arm, view.box(0.045, 0.045, 0.64, leather), 0, -0.40, -0.28);
+        place(arm, view.box(0.33, 0.20, 0.08, steel), 0.07, -0.40, -0.57);
+        place(arm, view.box(0.38, 0.05, 0.10, trim), 0.07, -0.50, -0.57);
+      } else {
+        const length = kind === 'runner' ? 0.30 : isBoss ? 0.74 : 0.57;
+        place(arm, view.box(0.024, 0.022, length, steel), 0, -0.40, -0.07 - length / 2);
+        place(arm, view.box(0.16, 0.027, 0.035, trim), 0, -0.40, -0.073);
+        place(arm, view.box(0.032, 0.031, 0.13, leather), 0, -0.40, 0.01);
+      }
     }
     batchParts(view, arm, `${kind}-arm-${side}`);
   }
@@ -184,13 +206,24 @@ export function characterModel(view, kind) {
   const shadowMaterial = view.contactShadowMaterial();
   const shadow = view.mesh(view.geometry('contact-shadow', () => new THREE.CircleGeometry(0.28, 16)), shadowMaterial);
   shadow.rotation.x = -Math.PI / 2; shadow.position.y = 0.018; shadow.scale.z = 1.1; root.add(shadow);
-  const color = isPlayer ? 0xb9a4e3 : isBoss ? 0xe3c481 : isHorde ? 0xbd8070 : 0xbdc69f;
+  const color = isPlayer ? 0xb9a4e3 : isBoss ? 0xe3c481 :
+    kind === 'runner' ? 0x94d6a8 : kind === 'lancer' ? 0x90bae9 : kind === 'brute' ? 0xe0b26b : isHorde ? 0xbd8070 : 0xbdc69f;
   const ring = view.torus(isBoss ? 0.38 : 0.285, isPlayer ? 0.018 : 0.009, view.material(color, isPlayer ? 0x46385d : 0x000000));
   ring.position.y = 0.028; root.add(ring);
   const pointer = view.cone(0.06, 0.16, view.material(color), 3);
   pointer.rotation.x = -Math.PI / 2; pointer.position.set(0, 0.05, -0.36); root.add(pointer);
   if (isBoss) root.scale.setScalar(1.12);
+  if (kind === 'runner') root.scale.set(0.90, 0.95, 0.90);
+  if (kind === 'brute') root.scale.set(1.28, 1.08, 1.18);
   const ownedMaterials = [cloth];
+  let channelAura = null;
+  if (isPlayer) {
+    const material = new THREE.MeshBasicMaterial({ color: 0xbba1fc, transparent: true, opacity: 0,
+      depthWrite: false, side: THREE.DoubleSide });
+    ownedMaterials.push(material); view.dynamicMaterials.add(material);
+    channelAura = view.torus(0.42, 0.025, material); channelAura.position.y = 0.07;
+    channelAura.visible = false; root.add(channelAura);
+  }
   let trail = null;
   if (isPlayer || isBoss || isHorde) {
     const material = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0,
@@ -200,7 +233,7 @@ export function characterModel(view, kind) {
     trail.rotation.x = -Math.PI / 2; trail.position.set(0.05, 0.94, -0.20);
     trail.visible = false; body.add(trail);
   }
-  root.userData = { body, robeMaterial: cloth, ring, pointer, legs, arms, trail, ownedMaterials,
+  root.userData = { body, robeMaterial: cloth, ring, pointer, legs, arms, trail, channelAura, ownedMaterials,
     baseColor: profile.cloth, kind };
   return root;
 }
@@ -261,40 +294,12 @@ export function animateCorpse(mesh, disposal, gameTime) {
   });
 }
 
-export function animateCharacter(mesh, actor, time, gameTime, { execution = null, deathScene = null, role = null } = {}) {
-  const { body, legs, arms, trail, ring, pointer, kind } = mesh.userData;
+export function animateCharacter(mesh, actor, time, gameTime, { execution = null } = {}) {
+  const { body, legs, arms, trail, ring, pointer, kind, channelAura } = mesh.userData;
   body.position.set(0, 0, 0); body.rotation.set(0, 0, 0); body.scale.setScalar(1);
   ring.visible = pointer.visible = true; if (trail) trail.visible = false;
+  if (channelAura) channelAura.visible = false;
   for (const limb of [...legs, ...arms]) limb.rotation.set(0, 0, 0);
-
-  if (deathScene && role === 'victim') {
-    const { recoil, kneel, fall } = deathScene, upright = 1 - phase(fall);
-    fallPose(mesh, fall);
-    // Keep the close-up victim at full size instead of the tile-sized corpse
-    // scale used for guard disposal; leave room for its head by the attacker.
-    body.scale.setScalar(1);
-    body.position.y += 0.035 * phase(fall); body.position.z += 0.22 * phase(fall);
-    body.position.y -= 0.27 * kneel * upright;
-    body.position.z += 0.14 * recoil * upright;
-    body.rotation.x += (0.18 * recoil - 0.35 * kneel) * upright;
-    arms[0].rotation.x += 0.45 * recoil * upright;
-    arms[1].rotation.x += 0.25 * recoil * upright;
-    legs[0].rotation.x = -0.85 * kneel * upright;
-    legs[1].rotation.x = -0.95 * kneel * upright;
-    return;
-  }
-  if (deathScene && role === 'attacker') {
-    const t = deathScene.time, lift = cinematicPhase(t, 0, 0.20),
-      strike = cinematicPhase(t, 0.20, 0.65), recover = cinematicPhase(t, 0.65, 1.6);
-    arms[0].rotation.set(-0.1, 0, 0.06);
-    arms[1].rotation.set(2.1 - strike * 2.65 + recover * 0.42,
-      -0.4 * lift + 0.4 * strike, -0.08);
-    body.rotation.y = -0.3 + 0.6 * strike - 0.3 * recover;
-    body.rotation.x = -0.1 * strike * (1 - recover);
-    swordTrail(mesh, (t - 0.18) / 0.55);
-    ring.visible = pointer.visible = false;
-    return;
-  }
 
   if (actor.death) {
     const progress = (gameTime - actor.death.startedAt) / DISPATCH_SECONDS;
@@ -330,6 +335,19 @@ export function animateCharacter(mesh, actor, time, gameTime, { execution = null
     return;
   }
 
+  if (actor.casting) {
+    const progress = Math.min(1, actor.casting.elapsed / actor.casting.duration), ready = phase(progress, 0, 0.3);
+    arms[0].rotation.set(1.5 * ready, -0.45 * ready, 0.18);
+    arms[1].rotation.set(1.75 * ready, 0.45 * ready, -0.18);
+    body.rotation.x = -0.07 * ready;
+    if (channelAura) {
+      channelAura.visible = true;
+      channelAura.material.opacity = 0.35 + progress * 0.45;
+      channelAura.scale.setScalar(1 + Math.sin(actor.casting.elapsed * 18) * 0.06);
+    }
+    return;
+  }
+
   if (actor.disposal) {
     const kneel = phase(actor.disposal.elapsed, 0, 0.25);
     body.position.set(0, -0.20 * kneel, 0.24 * kneel); body.rotation.x = -0.22 * kneel;
@@ -357,6 +375,11 @@ export function animateCharacter(mesh, actor, time, gameTime, { execution = null
     const ready = phase(1 - actor.warning.remaining / actor.warning.duration);
     arms[1].rotation.x = 1.4 + ready * 0.8; arms[1].rotation.y = -0.45;
     body.rotation.y = -0.20 * ready;
+    if (kind === 'lancer') {
+      arms[1].rotation.set(0.3 + ready * 0.25, -0.15, -0.1);
+      body.rotation.x = 0.06 * ready;
+    } else if (kind === 'runner') body.rotation.x = -0.18 * ready;
+    else if (kind === 'brute') arms[0].rotation.x = 1.1 + ready * 0.7;
   } else if (Number.isFinite(actor.attackStartedAt)) {
     const t = (gameTime - actor.attackStartedAt) / 0.4;
     if (t >= 0 && t < 1) {
@@ -364,7 +387,15 @@ export function animateCharacter(mesh, actor, time, gameTime, { execution = null
       arms[1].rotation.x = -0.13 + lift * 2.3 - strike * 2.9 + recover * 0.6;
       arms[1].rotation.y = -0.4 * lift + 0.4 * strike;
       body.rotation.y = -0.35 * lift + 0.7 * strike - 0.35 * recover;
-      swordTrail(mesh, (t - 0.2) / 0.4);
+      if (kind === 'lancer') {
+        const thrust = Math.sin(t * Math.PI);
+        arms[1].rotation.set(-0.3 * thrust, 0, -0.06);
+        body.position.z = -0.18 * thrust; body.rotation.y = 0;
+      } else {
+        if (kind === 'runner') body.rotation.x = -0.2 * Math.sin(t * Math.PI);
+        if (kind === 'brute') arms[0].rotation.x = arms[1].rotation.x * 0.7;
+        swordTrail(mesh, (t - 0.2) / 0.4);
+      }
     }
   }
 }

@@ -1,0 +1,64 @@
+HALLOWEEN GAME — ENEMY AND CASTING UPDATE
+
+For https://github.com/AdrianMoroz/Halloween-Game-Jam-2026
+Based on main at 26bddad. Update commit: 38b7dff.
+
+HOW TO UPLOAD
+1. Extract this ZIP. Open the Halloween-Game-Enemy-Update folder inside it.
+2. Upload the changed files to the repository root, keeping each file in its
+   existing folder. Merge src/, docs/ and tests/ with the existing folders;
+   replace matching files, but keep other files already in the repository.
+   Include .nojekyll, README.md, index.html and styles.css at the root.
+3. Delete these obsolete files from GitHub after uploading the update:
+   - src/cutscene.js
+   - docs/images/death-cutscene-offline.png
+   The new game no longer imports or uses these files.
+4. You do not upload this ZIP or a .patch file. No patch is needed.
+   This instruction sheet can remain on your PC.
+5. Keep your existing assets/, vendor/, src/audio.js, src/narration.js and CNAME.
+   No MP3 or WAV needs re-uploading. The supplied opening.wav mapping is kept.
+6. After GitHub Pages updates, refresh the game. If necessary use Ctrl+F5.
+
+CHANGES
+- Immediate death/retry menu; removed the separate 3D death cutscene.
+- Four horde archetypes: swordsman, runner, lancer and brute. They have
+  different speeds, weapons, attack areas, wind-ups and damage.
+- Red tiles announce fixed attack areas before damage. Runners lunge;
+  lancers hold spear range; brutes sweep six tiles for two damage.
+- Patrol pauses, looking turns, reversals and escape routes vary. Boss
+  attacks vary between thrust, cleave and surrounding sweep.
+- Spectral Flame channels for 0.7 seconds; Black Eclipse for 1 second.
+  Movement/facing/other combat inputs lock during the cast. Damage or an
+  escaped witness's alarm interrupts it without refunding the reserve.
+  Enemies keep moving, so a target can leave before release.
+- Fleeing witnesses now path around occupied and reserved tiles, including
+  a stationary player blocking the preferred escape route.
+- Existing execution/disposal animations, camera, campaign and audio remain.
+
+VERIFICATION
+127 automated tests pass. Syntax, imports, asset paths and UI bindings pass.
+Mixed 70-enemy geometry/resource checks and a 60-second simulation pass.
+The enemy lineup in docs/images/ is a software geometry preview with
+approximate lighting. Real browser graphics, sound and balance still need
+playtesting; follow docs/PLAYTEST.md.
+
+FILES TO UPLOAD
+  .nojekyll
+  README.md
+  docs/IMPLEMENTATION.md
+  docs/PLAYTEST.md
+  docs/images/enemy-archetypes-offline.png
+  index.html
+  src/art.js
+  src/camera.js
+  src/content.js
+  src/game.js
+  src/grid.js
+  src/main.js
+  src/view.js
+  styles.css
+  tests/ai.test.js
+  tests/camera.test.js
+  tests/game.test.js
+  tests/interface.test.js
+  tests/view.test.js

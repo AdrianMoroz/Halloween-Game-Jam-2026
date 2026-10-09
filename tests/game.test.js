@@ -137,9 +137,10 @@ test('frost stops movement and perception until it expires', () => {
   advance(game, .6); assert.equal(game.guards[0].state, 'flee');
 });
 
-test('instant flame kills skip execution and generate no corpse', () => {
+test('channeled flame kills skip execution and generate no corpse', () => {
   const game = new Game(level([guard()]), DEFAULT_STATS, ['flame', 'bone', 'wall', 'miasma']);
-  game.cast(0);
+  game.guards[0].frozenUntil = 10;
+  game.cast(0); assert.notEqual(game.guards[0].state, 'dead'); advance(game, .7);
   assert.equal(game.guards[0].state, 'dead'); assert.equal(game.player.execution, null);
   assert.equal(game.corpses.length, 0);
 });
@@ -221,7 +222,7 @@ test('a fatal crossing snapshots the killer and stops subsequent horde updates i
   assert.equal(game.drainEvents().filter(event => event.type === 'death').length, 1);
 });
 
-test('a lethal boss warning identifies the grandmaster for both mortal and nightmare cutscenes', () => {
+test('a lethal boss warning identifies the grandmaster for both mortal and nightmare deaths', () => {
   for (const killed of [0, 18]) {
     const game = new Game(BOSS_LEVEL, DEFAULT_STATS, DEFAULT_LOADOUT, { killed, total: 18 });
     game.player.x = 9; game.player.y = 8; game.boss.cooldown = 0;
